@@ -13,7 +13,6 @@ import random
 from datetime import datetime, timedelta
 from typing import Union
 
-from gtts import gTTS
 from ntgcalls import ConnectionNotFound, TelegramServerError
 from pyrogram import Client
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
@@ -25,9 +24,8 @@ from SWAGGYMUSIC import LOGGER, YouTube, app
 from SWAGGYMUSIC.misc import db
 from SWAGGYMUSIC.utils.database import (add_active_chat, add_active_video_chat,
                                        get_filter, get_lang, get_loop,
-                                       get_tts_duration, get_tts_text,
                                        group_assistant, is_autoend,
-                                       is_autoplay_on, is_thumb_on, is_tts_on,
+                                       is_autoplay_on, is_thumb_on,
                                        music_on, remove_active_chat,
                                        remove_active_video_chat, set_loop)
 from SWAGGYMUSIC.utils.errors import capture_internal_err
@@ -51,7 +49,6 @@ async def delete_old_message(chat_id: int):
 
 autoend = {}
 counter = {}
-_greeting_active = set()
 
 
 async def _clear_(chat_id: int):
@@ -164,24 +161,6 @@ class Call(PyTgCalls):
             raise
         except Exception:
             raise
-
-    async def play_greeting(self, chat_id: int):
-        if not await is_tts_on():
-            return
-        if not os.path.exists("cache"):
-            os.makedirs("cache")
-        try:
-            assistant = await group_assistant(self, chat_id)
-            greeting_path = f"cache/greeting_{chat_id}.mp3"
-            txt = await get_tts_text()
-            tts = gTTS(text=txt, lang="en")
-            tts.save(greeting_path)
-            stream = self._build_stream(greeting_path, video=False)
-            await self._play_on_assistant(assistant, chat_id, stream)
-            duration = await get_tts_duration()
-            await asyncio.sleep(duration)
-        except:
-            pass
 
     @capture_internal_err
     async def pause_stream(self, chat_id: int):
@@ -381,11 +360,6 @@ class Call(PyTgCalls):
         image: Union[bool, str] = None,
     ):
         assistant = await group_assistant(self, chat_id)
-        _greeting_active.add(chat_id)
-        try:
-            await self.play_greeting(chat_id)
-        finally:
-            _greeting_active.discard(chat_id)
         stream = self._build_stream(link, video=bool(video))
         await self._play_on_assistant(assistant, chat_id, stream)
 
@@ -425,11 +399,6 @@ class Call(PyTgCalls):
         assistant = await group_assistant(self, chat_id)
         language = await get_lang(chat_id)
         _ = get_string(language)
-        _greeting_active.add(chat_id)
-        try:
-            await self.play_greeting(chat_id)
-        finally:
-            _greeting_active.discard(chat_id)
         try:
             stream = self._build_stream(link, video=bool(video))
             await self._play_on_assistant(assistant, chat_id, stream)
@@ -577,11 +546,6 @@ class Call(PyTgCalls):
 
         language = await get_lang(chat_id)
         _ = get_string(language)
-        _greeting_active.add(chat_id)
-        try:
-            await self.play_greeting(chat_id)
-        finally:
-            _greeting_active.discard(chat_id)
 
         if not check: # Final check
             return await client.leave_call(chat_id, close=False)
@@ -792,8 +756,7 @@ class Call(PyTgCalls):
             async def _update_handler(_, update: types.Update, _client=client):
                 if isinstance(update, types.StreamEnded):
                     if update.stream_type == types.StreamEnded.Type.AUDIO:
-                        if update.chat_id not in _greeting_active:
-                            await self.change_stream(_client, update.chat_id)
+                        await self.change_stream(_client, update.chat_id)
                 elif isinstance(update, types.ChatUpdate):
                     if update.status in [
                         types.ChatUpdate.Status.KICKED,

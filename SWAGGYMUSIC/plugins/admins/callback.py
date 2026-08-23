@@ -546,6 +546,7 @@ async def del_back_playlist(client, CallbackQuery, _):
                             if str(streamtype) == "audio"
                             else config.TELEGRAM_VIDEO_URL
                         ),
+                        has_spoiler=True,
                         caption=_["stream_1"].format(
                             config.SUPPORT_CHAT, title[:23], duration, user
                         ),
@@ -567,6 +568,7 @@ async def del_back_playlist(client, CallbackQuery, _):
                 if await is_thumb_on(chat_id):
                     run = await CallbackQuery.message.reply_photo(
                         photo=config.SOUNCLOUD_IMG_URL,
+                        has_spoiler=True,
                         caption=_["stream_1"].format(
                             config.SUPPORT_CHAT, title[:23], duration, user
                         ),

@@ -40,7 +40,7 @@ async def update_stream_ui(
             try:
                 # If it's already a photo message, edit it
                 return await mystic.edit_media(
-                    media=InputMediaPhoto(img, caption=caption),
+                    media=InputMediaPhoto(img, caption=caption, has_spoiler=True),
                     reply_markup=InlineKeyboardMarkup(button),
                 )
             except Exception:
