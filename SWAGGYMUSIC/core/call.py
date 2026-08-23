@@ -384,10 +384,10 @@ class Call(PyTgCalls):
         _greeting_active.add(chat_id)
         try:
             await self.play_greeting(chat_id)
-            stream = self._build_stream(link, video=bool(video))
-            await self._play_on_assistant(assistant, chat_id, stream)
         finally:
             _greeting_active.discard(chat_id)
+        stream = self._build_stream(link, video=bool(video))
+        await self._play_on_assistant(assistant, chat_id, stream)
 
     @capture_internal_err
     async def seek_stream(self, chat_id, file_path, to_seek, duration, mode):
@@ -428,6 +428,9 @@ class Call(PyTgCalls):
         _greeting_active.add(chat_id)
         try:
             await self.play_greeting(chat_id)
+        finally:
+            _greeting_active.discard(chat_id)
+        try:
             stream = self._build_stream(link, video=bool(video))
             await self._play_on_assistant(assistant, chat_id, stream)
         except exceptions.NoActiveGroupCall:
@@ -438,8 +441,6 @@ class Call(PyTgCalls):
             raise AssistantErr(_["call_10"])
         except Exception:
             raise AssistantErr(_["call_10"])
-        finally:
-            _greeting_active.discard(chat_id)
         await add_active_chat(chat_id)
         await music_on(chat_id)
         if video:
@@ -579,86 +580,157 @@ class Call(PyTgCalls):
         _greeting_active.add(chat_id)
         try:
             await self.play_greeting(chat_id)
+        finally:
+            _greeting_active.discard(chat_id)
 
-            if not check: # Final check
-                return await client.leave_call(chat_id, close=False)
+        if not check: # Final check
+            return await client.leave_call(chat_id, close=False)
 
-            title = (check[0]["title"]).title()
-            user = check[0]["by"]
-            original_chat_id = check[0]["chat_id"]
-            streamtype = check[0]["streamtype"]
-            videoid = check[0]["vidid"]
+        title = (check[0]["title"]).title()
+        user = check[0]["by"]
+        original_chat_id = check[0]["chat_id"]
+        streamtype = check[0]["streamtype"]
+        videoid = check[0]["vidid"]
 
+        if chat_id in db and db[chat_id]:
+            db[chat_id][0]["played"] = 0
+
+        exis = (check[0]).get("old_dur")
+        if exis:
             if chat_id in db and db[chat_id]:
-                db[chat_id][0]["played"] = 0
+                db[chat_id][0]["dur"] = exis
+                db[chat_id][0]["seconds"] = check[0]["old_second"]
+                db[chat_id][0]["speed_path"] = None
+                db[chat_id][0]["speed"] = 1.0
 
-            exis = (check[0]).get("old_dur")
-            if exis:
-                if chat_id in db and db[chat_id]:
-                    db[chat_id][0]["dur"] = exis
-                    db[chat_id][0]["seconds"] = check[0]["old_second"]
-                    db[chat_id][0]["speed_path"] = None
-                    db[chat_id][0]["speed"] = 1.0
+        video = True if str(streamtype) == "video" else False
+        if "live_" in queued:
+            n, link = await YouTube.video(videoid, True)
+            if n == 0:
+                return await app.send_message(
+                    original_chat_id,
+                    text=_["call_6"],
+                )
+            stream = self._build_stream(link, video=video)
+            try:
+                await self._play_on_assistant(client, chat_id, stream)
+            except Exception:
+                return await app.send_message(
+                    original_chat_id,
+                    text=_["call_6"],
+                )
+            img = await get_thumb(videoid)
+            button = stream_markup(
+                _, chat_id, await is_autoplay_on(chat_id), await is_thumb_on(chat_id), await get_filter(chat_id)
+            )
+            caption=_["stream_1"].format(
+                f"https://t.me/{app.username}?start=info_{videoid}",
+                title[:23],
+                check[0]["dur"],
+                user,
+            )
+            run = await update_stream_ui(chat_id, original_chat_id, None, img, caption, button)
+            if chat_id in db and db[chat_id]:
+                db[chat_id][0]["mystic"] = run
+                db[chat_id][0]["markup"] = "tg"
+                db[chat_id][0]["file"] = link
+        elif "vid_" in queued:
+            try:
+                file_path, direct = await YouTube.download(
+                    videoid,
+                    None,
+                    videoid=True,
+                    video=video,
+                )
+            except Exception:
+                if old_mystic:
+                    try:
+                        return await old_mystic.edit_text(
+                            _["call_6"], disable_web_page_preview=True
+                        )
+                    except:
+                        return await old_mystic.edit_caption(
+                            caption=_["call_6"]
+                        )
+                else:
+                    return await app.send_message(original_chat_id, _["call_6"])
+            stream = self._build_stream(file_path, video=video)
+            try:
+                await self._play_on_assistant(client, chat_id, stream)
+            except Exception:
+                return await app.send_message(
+                    original_chat_id,
+                    text=_["call_6"],
+                )
+            img = await get_thumb(videoid)
+            button = stream_markup(
+                _, chat_id, await is_autoplay_on(chat_id), await is_thumb_on(chat_id), await get_filter(chat_id)
+            )
+            caption=_["stream_1"].format(
+                f"https://t.me/{app.username}?start=info_{videoid}",
+                title[:23],
+                check[0]["dur"],
+                user,
+            )
+            run = await update_stream_ui(chat_id, original_chat_id, None, img, caption, button)
+            if chat_id in db and db[chat_id]:
+                db[chat_id][0]["mystic"] = run
+                db[chat_id][0]["markup"] = "stream"
+                db[chat_id][0]["file"] = file_path
 
-            video = True if str(streamtype) == "video" else False
-            if "live_" in queued:
-                n, link = await YouTube.video(videoid, True)
-                if n == 0:
-                    return await app.send_message(
-                        original_chat_id,
-                        text=_["call_6"],
-                    )
-                stream = self._build_stream(link, video=video)
-                try:
-                    await self._play_on_assistant(client, chat_id, stream)
-                except Exception:
-                    return await app.send_message(
-                        original_chat_id,
-                        text=_["call_6"],
-                    )
-                img = await get_thumb(videoid)
+        elif "index_" in queued:
+            stream = self._build_stream(videoid, video=video)
+            try:
+                await self._play_on_assistant(client, chat_id, stream)
+            except Exception:
+                return await app.send_message(
+                    original_chat_id,
+                    text=_["call_6"],
+                )
+            button = stream_markup(
+                _, chat_id, await is_autoplay_on(chat_id), await is_thumb_on(chat_id), await get_filter(chat_id)
+            )
+            caption=_["stream_2"].format(user)
+            run = await update_stream_ui(chat_id, original_chat_id, None, config.STREAM_IMG_URL, caption, button)
+            if chat_id in db and db[chat_id]:
+                db[chat_id][0]["mystic"] = run
+                db[chat_id][0]["markup"] = "tg"
+                db[chat_id][0]["file"] = videoid
+        else:
+            stream = self._build_stream(queued, video=video)
+            try:
+                await self._play_on_assistant(client, chat_id, stream)
+            except Exception:
+                return await app.send_message(
+                    original_chat_id,
+                    text=_["call_6"],
+                )
+            if videoid == "telegram":
                 button = stream_markup(
                     _, chat_id, await is_autoplay_on(chat_id), await is_thumb_on(chat_id), await get_filter(chat_id)
                 )
+                img = config.TELEGRAM_VIDEO_URL if video else config.TELEGRAM_AUDIO_URL
                 caption=_["stream_1"].format(
-                    f"https://t.me/{app.username}?start=info_{videoid}",
-                    title[:23],
-                    check[0]["dur"],
-                    user,
+                    config.SUPPORT_CHAT, title[:23], check[0]["dur"], user
                 )
                 run = await update_stream_ui(chat_id, original_chat_id, None, img, caption, button)
                 if chat_id in db and db[chat_id]:
                     db[chat_id][0]["mystic"] = run
                     db[chat_id][0]["markup"] = "tg"
-                    db[chat_id][0]["file"] = link
-            elif "vid_" in queued:
-                try:
-                    file_path, direct = await YouTube.download(
-                        videoid,
-                        None,
-                        videoid=True,
-                        video=video,
-                    )
-                except Exception:
-                    if old_mystic:
-                        try:
-                            return await old_mystic.edit_text(
-                                _["call_6"], disable_web_page_preview=True
-                            )
-                        except:
-                            return await old_mystic.edit_caption(
-                                caption=_["call_6"]
-                            )
-                    else:
-                        return await app.send_message(original_chat_id, _["call_6"])
-                stream = self._build_stream(file_path, video=video)
-                try:
-                    await self._play_on_assistant(client, chat_id, stream)
-                except Exception:
-                    return await app.send_message(
-                        original_chat_id,
-                        text=_["call_6"],
-                    )
+                    db[chat_id][0]["file"] = img
+            elif videoid == "soundcloud":
+                button = stream_markup(
+                    _, chat_id, await is_autoplay_on(chat_id), await is_thumb_on(chat_id), await get_filter(chat_id)
+                )
+                caption=_["stream_1"].format(
+                    config.SUPPORT_CHAT, title[:23], check[0]["dur"], user
+                )
+                run = await update_stream_ui(chat_id, original_chat_id, None, config.SOUNCLOUD_IMG_URL, caption, button)
+                if chat_id in db and db[chat_id]:
+                    db[chat_id][0]["mystic"] = run
+                    db[chat_id][0]["markup"] = "tg"
+                    db[chat_id][0]["file"] = queued
+            else:
                 img = await get_thumb(videoid)
                 button = stream_markup(
                     _, chat_id, await is_autoplay_on(chat_id), await is_thumb_on(chat_id), await get_filter(chat_id)
@@ -673,79 +745,7 @@ class Call(PyTgCalls):
                 if chat_id in db and db[chat_id]:
                     db[chat_id][0]["mystic"] = run
                     db[chat_id][0]["markup"] = "stream"
-                    db[chat_id][0]["file"] = file_path
-
-            elif "index_" in queued:
-                stream = self._build_stream(videoid, video=video)
-                try:
-                    await self._play_on_assistant(client, chat_id, stream)
-                except Exception:
-                    return await app.send_message(
-                        original_chat_id,
-                        text=_["call_6"],
-                    )
-                button = stream_markup(
-                    _, chat_id, await is_autoplay_on(chat_id), await is_thumb_on(chat_id), await get_filter(chat_id)
-                )
-                caption=_["stream_2"].format(user)
-                run = await update_stream_ui(chat_id, original_chat_id, None, config.STREAM_IMG_URL, caption, button)
-                if chat_id in db and db[chat_id]:
-                    db[chat_id][0]["mystic"] = run
-                    db[chat_id][0]["markup"] = "tg"
-                    db[chat_id][0]["file"] = videoid
-            else:
-                stream = self._build_stream(queued, video=video)
-                try:
-                    await self._play_on_assistant(client, chat_id, stream)
-                except Exception:
-                    return await app.send_message(
-                        original_chat_id,
-                        text=_["call_6"],
-                    )
-                if videoid == "telegram":
-                    button = stream_markup(
-                        _, chat_id, await is_autoplay_on(chat_id), await is_thumb_on(chat_id), await get_filter(chat_id)
-                    )
-                    img = config.TELEGRAM_VIDEO_URL if video else config.TELEGRAM_AUDIO_URL
-                    caption=_["stream_1"].format(
-                        config.SUPPORT_CHAT, title[:23], check[0]["dur"], user
-                    )
-                    run = await update_stream_ui(chat_id, original_chat_id, None, img, caption, button)
-                    if chat_id in db and db[chat_id]:
-                        db[chat_id][0]["mystic"] = run
-                        db[chat_id][0]["markup"] = "tg"
-                        db[chat_id][0]["file"] = img
-                elif videoid == "soundcloud":
-                    button = stream_markup(
-                        _, chat_id, await is_autoplay_on(chat_id), await is_thumb_on(chat_id), await get_filter(chat_id)
-                    )
-                    caption=_["stream_1"].format(
-                        config.SUPPORT_CHAT, title[:23], check[0]["dur"], user
-                    )
-                    run = await update_stream_ui(chat_id, original_chat_id, None, config.SOUNCLOUD_IMG_URL, caption, button)
-                    if chat_id in db and db[chat_id]:
-                        db[chat_id][0]["mystic"] = run
-                        db[chat_id][0]["markup"] = "tg"
-                        db[chat_id][0]["file"] = queued
-                else:
-                    img = await get_thumb(videoid)
-                    button = stream_markup(
-                        _, chat_id, await is_autoplay_on(chat_id), await is_thumb_on(chat_id), await get_filter(chat_id)
-                    )
-                    caption=_["stream_1"].format(
-                        f"https://t.me/{app.username}?start=info_{videoid}",
-                        title[:23],
-                        check[0]["dur"],
-                        user,
-                    )
-                    run = await update_stream_ui(chat_id, original_chat_id, None, img, caption, button)
-                    if chat_id in db and db[chat_id]:
-                        db[chat_id][0]["mystic"] = run
-                        db[chat_id][0]["markup"] = "stream"
-                        db[chat_id][0]["file"] = queued
-
-        finally:
-            _greeting_active.discard(chat_id)
+                    db[chat_id][0]["file"] = queued
 
     @capture_internal_err
     async def ping(self):
