@@ -11,10 +11,16 @@ import os
 from random import randint
 from typing import Union
 
+from pyrogram.errors import (DocumentInvalid, ExternalUrlInvalid, MediaEmpty,
+                             MediaInvalid, MessageIdInvalid, MessageNotModified,
+                             PhotoInvalid, PhotoInvalidDimensions,
+                             PhotoSaveFileInvalid, SendMessageMediaInvalid,
+                             WebpageCurlFailed, WebpageMediaEmpty,
+                             WebpageNotFound, WebpageUrlInvalid)
 from pyrogram.types import InlineKeyboardMarkup, InputMediaPhoto
 
 import config
-from SWAGGYMUSIC import Carbon, YouTube, app
+from SWAGGYMUSIC import LOGGER, Carbon, YouTube, app
 from SWAGGYMUSIC.core.call import Alone
 from SWAGGYMUSIC.misc import db
 from SWAGGYMUSIC.utils.database import (add_active_video_chat, get_filter,
@@ -35,52 +41,166 @@ async def update_stream_ui(
     caption,
     button,
 ):
+    # Errors that indicate the panel message reference itself is no longer
+    # usable (deleted, in another chat, too old to edit, etc.). When any of
+    # these is raised we must drop the stored mystic and create a fresh panel.
+    _INVALID_MSG_REFS = (
+        MessageIdInvalid,
+        MessageNotModified,
+    )
+
+    # Errors that indicate the photo/media payload is unusable. When any of
+    # these is raised by send_photo we fall back to a text-only panel so the
+    # user is never left without playback controls.
+    _INVALID_PHOTO_ERRORS = (
+        DocumentInvalid,
+        MediaInvalid,
+        MediaEmpty,
+        PhotoInvalid,
+        PhotoInvalidDimensions,
+        PhotoSaveFileInvalid,
+        SendMessageMediaInvalid,
+        ExternalUrlInvalid,
+        WebpageCurlFailed,
+        WebpageMediaEmpty,
+        WebpageNotFound,
+        WebpageUrlInvalid,
+    )
+
+    markup = InlineKeyboardMarkup(button)
+
     if await is_thumb_on(chat_id):
         if mystic:
             try:
-                # If it's already a photo message, edit it
+                # If it's already a photo message, edit it in place
                 return await mystic.edit_media(
                     media=InputMediaPhoto(img, caption=caption, has_spoiler=True),
-                    reply_markup=InlineKeyboardMarkup(button),
+                    reply_markup=markup,
                 )
-            except Exception:
+            except _INVALID_MSG_REFS as edit_err:
+                # mystic is no longer editable (deleted / wrong type / etc.).
+                # Try to delete the stale reference, then fall through to send_photo.
+                LOGGER(__name__).warning(
+                    f"update_stream_ui: edit_media failed for chat={chat_id} "
+                    f"(mystic id={getattr(mystic, 'id', None)}): {edit_err}. "
+                    f"Will send a fresh photo panel."
+                )
                 try:
                     await mystic.delete()
-                except:
+                except Exception:
                     pass
-        return await app.send_photo(
-            original_chat_id,
-            photo=img,
-            has_spoiler=True,
-            caption=caption,
-            reply_markup=InlineKeyboardMarkup(button),
-        )
+            except Exception as edit_err:
+                # Unexpected error from edit_media — log it and try the fresh
+                # photo path so playback is not interrupted.
+                LOGGER(__name__).error(
+                    f"update_stream_ui: unexpected edit_media error for "
+                    f"chat={chat_id}: {edit_err}. Falling back to send_photo."
+                )
+                try:
+                    await mystic.delete()
+                except Exception:
+                    pass
+        # Send a fresh photo panel (fallback when mystic could not be edited
+        # or when there was no mystic to begin with, e.g. autoplay next-song
+        # path in call.py).
+        try:
+            return await app.send_photo(
+                original_chat_id,
+                photo=img,
+                has_spoiler=True,
+                caption=caption,
+                reply_markup=markup,
+            )
+        except _INVALID_PHOTO_ERRORS as photo_err:
+            # The thumbnail image is unusable (DocumentInvalid, bad URL,
+            # corrupted cache file, etc.). Recover by sending a text-only
+            # panel with the same caption + buttons so the user always has
+            # working playback controls.
+            LOGGER(__name__).error(
+                f"update_stream_ui: send_photo failed for chat={original_chat_id} "
+                f"({photo_err}). Falling back to text-only playback panel."
+            )
+            try:
+                return await app.send_message(
+                    original_chat_id,
+                    text=caption,
+                    reply_markup=markup,
+                )
+            except Exception as msg_err:
+                LOGGER(__name__).error(
+                    f"update_stream_ui: text-only fallback also failed for "
+                    f"chat={original_chat_id}: {msg_err}"
+                )
+                raise
+        except Exception as photo_err:
+            # Any other send_photo error — also fall back to text-only panel
+            # so a single bad thumbnail never breaks the whole play flow.
+            LOGGER(__name__).error(
+                f"update_stream_ui: send_photo raised unexpected error for "
+                f"chat={original_chat_id}: {photo_err}. Falling back to text-only."
+            )
+            try:
+                return await app.send_message(
+                    original_chat_id,
+                    text=caption,
+                    reply_markup=markup,
+                )
+            except Exception as msg_err:
+                LOGGER(__name__).error(
+                    f"update_stream_ui: text-only fallback also failed for "
+                    f"chat={original_chat_id}: {msg_err}"
+                )
+                raise
     else:
         if mystic:
             try:
                 # If it's a text message, edit it
                 return await mystic.edit_text(
                     text=caption,
-                    reply_markup=InlineKeyboardMarkup(button),
+                    reply_markup=markup,
                 )
-            except Exception:
-                # If it was a photo message or edit failed, try to edit caption if photo
+            except _INVALID_MSG_REFS as edit_err:
+                # mystic is no longer editable. Drop the stale reference and
+                # fall through to send_message.
+                LOGGER(__name__).warning(
+                    f"update_stream_ui: edit_text failed for chat={chat_id} "
+                    f"(mystic id={getattr(mystic, 'id', None)}): {edit_err}. "
+                    f"Will send a fresh text panel."
+                )
+                try:
+                    await mystic.delete()
+                except Exception:
+                    pass
+            except Exception as edit_err:
+                # If it was a photo message or edit_text failed for another
+                # reason, try edit_caption as a last in-place attempt.
                 try:
                     await mystic.edit_caption(
                         caption=caption,
-                        reply_markup=InlineKeyboardMarkup(button),
+                        reply_markup=markup,
                     )
                     return mystic
                 except Exception:
                     try:
                         await mystic.delete()
-                    except:
+                    except Exception:
                         pass
-        return await app.send_message(
-            original_chat_id,
-            text=caption,
-            reply_markup=InlineKeyboardMarkup(button),
-        )
+                    LOGGER(__name__).error(
+                        f"update_stream_ui: edit_text/edit_caption both failed "
+                        f"for chat={chat_id}: {edit_err}. Sending fresh text panel."
+                    )
+        try:
+            return await app.send_message(
+                original_chat_id,
+                text=caption,
+                reply_markup=markup,
+            )
+        except Exception as msg_err:
+            LOGGER(__name__).error(
+                f"update_stream_ui: send_message failed for "
+                f"chat={original_chat_id}: {msg_err}"
+            )
+            raise
 
 
 async def update_queue_ui(

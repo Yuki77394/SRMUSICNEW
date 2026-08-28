@@ -11,12 +11,12 @@ import random
 import string
 
 from pyrogram import filters
+from pyrogram.errors import MessageIdInvalid, MessageNotModified
 from pyrogram.types import InlineKeyboardMarkup, InputMediaPhoto, Message
 from pytgcalls.exceptions import NoActiveGroupCall
 
 import config
-from SWAGGYMUSIC import (Apple, Resso, SoundCloud, Spotify, Telegram, YouTube,
-                        app)
+from SWAGGYMUSIC import LOGGER, Apple, Resso, SoundCloud, Spotify, Telegram, YouTube, app
 from SWAGGYMUSIC.core.call import Alone
 from SWAGGYMUSIC.utils import seconds_to_min, time_to_seconds
 from SWAGGYMUSIC.utils.database import is_thumb_on
@@ -437,7 +437,44 @@ async def play_commnd(
         except Exception as e:
             ex_type = type(e).__name__
             err = e if ex_type == "AssistantErr" else _["general_2"].format(ex_type)
-            return await mystic.edit_text(err)
+            # Try editing the existing mystic status message first. If mystic
+            # was deleted by an upstream fallback (e.g. update_stream_ui deleted
+            # it because edit_media failed) the edit will raise MessageIdInvalid
+            # — in that case we recover by sending a fresh message so the user
+            # still sees the error instead of crashing the whole /play command.
+            try:
+                return await mystic.edit_text(err)
+            except (MessageIdInvalid, MessageNotModified) as edit_err:
+                LOGGER(__name__).warning(
+                    f"play_commnd: mystic.edit_text failed ({edit_err}); "
+                    f"the status message is no longer editable. Sending a "
+                    f"fresh message to display the error."
+                )
+                try:
+                    return await message.reply_text(
+                        err, disable_web_page_preview=True
+                    )
+                except Exception:
+                    return await app.send_message(
+                        message.chat.id,
+                        err,
+                        disable_web_page_preview=True,
+                    )
+            except Exception as edit_err:
+                LOGGER(__name__).error(
+                    f"play_commnd: unexpected error editing mystic for "
+                    f"chat={message.chat.id}: {edit_err}. Sending fresh message."
+                )
+                try:
+                    return await message.reply_text(
+                        err, disable_web_page_preview=True
+                    )
+                except Exception:
+                    return await app.send_message(
+                        message.chat.id,
+                        err,
+                        disable_web_page_preview=True,
+                    )
         return await play_logs(message, streamtype=streamtype)
     else:
         if plist_type:
