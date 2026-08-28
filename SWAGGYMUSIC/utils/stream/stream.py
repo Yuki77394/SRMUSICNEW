@@ -47,7 +47,12 @@ from SWAGGYMUSIC.utils.thumbnails import get_thumb
 def _validate_local_thumbnail(img: Union[str, None]) -> bool:
     """Return True only if *img* is a non-empty string pointing to an
     existing local file with non-zero size that PIL can verify as a real
-    image. URLs and None are rejected."""
+    image AND that is in a Telegram-compatible mode (RGB only).
+
+    URLs and None are rejected. RGBA/LA/P modes are also rejected because
+    Telegram Bot API raises DOCUMENT_INVALID for photos with an alpha
+    channel — this is the actual root cause of the production error.
+    """
     try:
         if not img or not isinstance(img, str):
             return False
@@ -60,10 +65,59 @@ def _validate_local_thumbnail(img: Union[str, None]) -> bool:
             return False
         from PIL import Image as PILImage
         with PILImage.open(img) as im:
-            im.verify()
+            im.verify()  # raises if file is not a valid image
+        # Re-open to check mode (verify() invalidates the image object)
+        with PILImage.open(img) as im:
+            mode = im.mode
+            # Telegram Bot API requires RGB — reject anything with alpha
+            if mode != "RGB":
+                return False
         return True
     except Exception:
         return False
+
+
+def _log_thumbnail_diagnostics(img: Union[str, None], context: str) -> None:
+    """Log detailed diagnostic information about the thumbnail image.
+
+    Called when send_photo fails so we can see exactly what was passed
+    to Telegram — path, existence, size, PIL format/mode/dimensions.
+    """
+    try:
+        from PIL import Image as PILImage
+        LOGGER(__name__).error(
+            f"=== THUMBNAIL DIAGNOSTICS ({context}) ==="
+        )
+        LOGGER(__name__).error(f"  repr(img): {img!r}")
+        LOGGER(__name__).error(f"  type(img): {type(img).__name__}")
+        if not img or not isinstance(img, str):
+            LOGGER(__name__).error(f"  img is empty or not a string")
+            return
+        if img.startswith(("http://", "https://")):
+            LOGGER(__name__).error(f"  img is a URL (should be a local path)")
+            return
+        LOGGER(__name__).error(f"  os.path.exists: {os.path.exists(img)}")
+        if not os.path.exists(img):
+            return
+        size = os.path.getsize(img)
+        LOGGER(__name__).error(f"  file size: {size} bytes")
+        try:
+            with PILImage.open(img) as im:
+                fmt = im.format
+                mode = im.mode
+                dims = im.size
+            LOGGER(__name__).error(
+                f"  PIL: format={fmt} mode={mode} dimensions={dims}"
+            )
+            if mode != "RGB":
+                LOGGER(__name__).error(
+                    f"  ⚠️ mode is {mode} — Telegram rejects non-RGB photos "
+                    f"with DOCUMENT_INVALID"
+                )
+        except Exception as pil_err:
+            LOGGER(__name__).error(f"  PIL could not open image: {pil_err}")
+    except Exception as e:
+        LOGGER(__name__).error(f"  diagnostics failed: {e}")
 
 
 async def _send_text_panel(original_chat_id, caption, markup, mystic=None):
@@ -204,12 +258,14 @@ async def update_stream_ui(
                     f"update_stream_ui: send_photo failed for chat={original_chat_id} "
                     f"({photo_err}). Falling back to text-only playback panel."
                 )
+                _log_thumbnail_diagnostics(img, f"send_photo failed: {photo_err}")
                 # Fall through to text-only fallback below
             except Exception as photo_err:
                 LOGGER(__name__).error(
                     f"update_stream_ui: send_photo raised unexpected error for "
                     f"chat={original_chat_id}: {photo_err}. Falling back to text-only."
                 )
+                _log_thumbnail_diagnostics(img, f"send_photo unexpected: {photo_err}")
                 # Fall through to text-only fallback below
         else:
             LOGGER(__name__).error(

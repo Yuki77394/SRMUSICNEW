@@ -1,3 +1,5 @@
+cache_e2e/
+cache_test/
 .env
 .cache
 log.txt

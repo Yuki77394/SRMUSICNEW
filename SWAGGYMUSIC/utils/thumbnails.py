@@ -56,7 +56,12 @@ def trim_to_width(text: str, font: ImageFont.FreeTypeFont, max_w: int) -> str:
 
 def _is_valid_local_image(path: str) -> bool:
     """Return True only if *path* exists, has non-zero size, and can be
-    opened + verified by PIL as a real image."""
+    opened + verified by PIL as a real image in a Telegram-compatible mode.
+
+    Telegram Bot API rejects photos with an alpha channel (RGBA/P/LA modes)
+    with DOCUMENT_INVALID, so we only accept RGB images here. This forces
+    cached RGBA PNGs (from before this fix) to be regenerated as RGB.
+    """
     try:
         if not path or not isinstance(path, str):
             return False
@@ -66,6 +71,12 @@ def _is_valid_local_image(path: str) -> bool:
             return False
         with Image.open(path) as im:
             im.verify()  # raises if file is not a valid image
+        # Re-open to check mode (verify() invalidates the image object)
+        with Image.open(path) as im:
+            mode = im.mode
+            # Telegram Bot API requires RGB — reject anything with alpha
+            if mode != "RGB":
+                return False
         return True
     except Exception:
         return False
@@ -243,7 +254,21 @@ async def get_thumb(videoid: str):
             bg.paste(black_ic, (ICONS_X, ICONS_Y), black_ic)
 
         # Save final composite
-        bg.save(cache_path)
+        # Flatten RGBA → RGB before saving so Telegram's Bot API accepts the
+        # photo. Telegram rejects photos that contain an alpha channel with
+        # DOCUMENT_INVALID, even when the alpha is mostly opaque (the frosted
+        # glass panel produces alpha values 191-255). We composite onto a
+        # white background which preserves the exact visual appearance of the
+        # existing design (the blurred thumbnail + frosted panel is already
+        # fully opaque visually — the alpha channel is just an artifact of the
+        # RGBA compositing pipeline).
+        try:
+            flat = Image.new("RGB", bg.size, (255, 255, 255))
+            flat.paste(bg, mask=bg.getchannel("A"))
+            flat.save(cache_path)
+        except Exception:
+            _remove_file(cache_path)
+            return None
     except Exception:
         # Generation failed — make sure we don't leave a partial cache file
         _remove_file(cache_path)
