@@ -11,7 +11,6 @@ import os
 from random import randint
 from typing import Union
 
-from PIL import Image as PILImage
 from pyrogram.errors import (DocumentInvalid, ExternalUrlInvalid, MediaEmpty,
                              MediaInvalid, MessageIdInvalid, MessageNotModified,
                              PhotoInvalid, PhotoInvalidDimensions,
@@ -35,182 +34,93 @@ from SWAGGYMUSIC.utils.thumbnails import get_thumb
 
 
 # ---------------------------------------------------------------------------
-# Thumbnail validation / recovery helpers
+# Thumbnail validation helper
 #
-# These helpers wrap the existing get_thumb() so that update_stream_ui never
-# passes an invalid image to Telegram's send_photo. They do NOT modify
-# thumbnails.py — the existing thumbnail design is preserved exactly.
+# After fixing thumbnails.py, get_thumb() is guaranteed to return either:
+#   - a local file path that points to a real, PIL-verified image
+#   - None
+#
+# So this helper only needs to validate LOCAL files. URLs are NEVER accepted
+# as valid images — they are the source of DOCUMENT_INVALID in production.
 # ---------------------------------------------------------------------------
 
-
-def _extract_vidid_from_path(img: Union[str, None]) -> Union[str, None]:
-    """Extract the YouTube video id from a local cache path produced by
-    thumbnails.get_thumb (pattern: cache/{vidid}_v4.png)."""
-    if not img or not isinstance(img, str):
-        return None
-    if img.startswith(("http://", "https://")):
-        return None
-    basename = os.path.basename(img)
-    if basename.endswith("_v4.png"):
-        return basename[: -len("_v4.png")]
-    return None
-
-
-async def _validate_thumbnail(img: Union[str, None]) -> tuple:
-    """Validate that *img* is a usable thumbnail for Telegram send_photo.
-
-    Returns ``(is_valid: bool, validated_path: str|None, info: str)``.
-
-    For URLs we cannot pre-validate cheaply (Telegram fetches them server-side),
-    so we accept them but the caller must still handle DocumentInvalid at send
-    time. For local files we verify existence, size > 0, and PIL readability.
-    """
-    if not img or not isinstance(img, str):
-        return (False, None, f"empty/non-string img: {type(img).__name__}")
-
-    # URL — assume valid (let Telegram try); recovery happens at send time
-    if img.startswith(("http://", "https://")):
-        return (True, img, f"URL (not pre-validated): {img}")
-
-    # Local file
-    if not os.path.exists(img):
-        return (False, None, f"local file does not exist: {img}")
-
-    size = os.path.getsize(img)
-    if size == 0:
-        return (False, None, f"local file is empty (0 bytes): {img}")
-
+def _validate_local_thumbnail(img: Union[str, None]) -> bool:
+    """Return True only if *img* is a non-empty string pointing to an
+    existing local file with non-zero size that PIL can verify as a real
+    image. URLs and None are rejected."""
     try:
+        if not img or not isinstance(img, str):
+            return False
+        # Reject URLs — only local file paths are valid after thumbnails.py fix
+        if img.startswith(("http://", "https://")):
+            return False
+        if not os.path.exists(img):
+            return False
+        if os.path.getsize(img) <= 0:
+            return False
+        from PIL import Image as PILImage
         with PILImage.open(img) as im:
-            im.verify()  # raises if the file is not a valid image
-        # verify() closes the file; reopen to read format/mode
-        with PILImage.open(img) as im:
-            fmt = im.format
-            mode = im.mode
-        return (
-            True,
-            img,
-            f"local file OK: format={fmt} mode={mode} size={size} bytes path={img}",
-        )
-    except Exception as e:
-        return (False, None, f"PIL verification failed for {img}: {e}")
+            im.verify()
+        return True
+    except Exception:
+        return False
 
 
-async def _regenerate_thumbnail(vidid: str, original_img: Union[str, None]) -> Union[str, None]:
-    """Delete the corrupted cache file (if any) and re-call get_thumb(vidid)
-    so thumbnails.py regenerates the SAME existing design from scratch."""
-    if not vidid:
-        return None
+async def _send_text_panel(original_chat_id, caption, markup, mystic=None):
+    """Best-effort text-only panel creation.
 
-    if original_img and isinstance(original_img, str) and not original_img.startswith(("http://", "https://")):
+    Order:
+      1. If mystic exists, try edit_text (in-place)
+      2. If that fails (or no mystic), send a fresh message
+      3. Only AFTER the fresh message is created, delete the old mystic
+      4. Return the new (or edited) Message object
+
+    This prevents MESSAGE_ID_INVALID by never deleting the old mystic
+    before a replacement exists.
+    """
+    # Errors that mean the panel message reference itself is no longer usable
+    _INVALID_MSG_REFS = (MessageIdInvalid, MessageNotModified)
+
+    if mystic:
         try:
-            if os.path.exists(original_img):
-                os.remove(original_img)
-                LOGGER(__name__).warning(
-                    f"Thumbnail regeneration: removed corrupted cache file {original_img}"
+            return await mystic.edit_text(text=caption, reply_markup=markup)
+        except _INVALID_MSG_REFS as edit_err:
+            LOGGER(__name__).warning(
+                f"update_stream_ui: edit_text failed for chat={original_chat_id} "
+                f"(mystic id={getattr(mystic, 'id', None)}): {edit_err}. "
+                f"Will send a fresh text panel."
+            )
+        except Exception as edit_err:
+            # Maybe mystic is a photo message → try edit_caption as last resort
+            try:
+                await mystic.edit_caption(caption=caption, reply_markup=markup)
+                return mystic
+            except Exception:
+                LOGGER(__name__).error(
+                    f"update_stream_ui: edit_text/edit_caption both failed "
+                    f"for chat={original_chat_id}: {edit_err}. Sending fresh text panel."
                 )
-        except Exception as e:
-            LOGGER(__name__).error(
-                f"Thumbnail regeneration: failed to remove {original_img}: {e}"
-            )
 
+    # Send a fresh text message FIRST, then delete old mystic AFTER success
     try:
-        new_img = await get_thumb(vidid)
-        LOGGER(__name__).info(
-            f"Thumbnail regeneration: get_thumb({vidid}) returned {new_img}"
+        new_msg = await app.send_message(
+            original_chat_id,
+            text=caption,
+            reply_markup=markup,
         )
-        return new_img
-    except Exception as e:
+        if mystic:
+            try:
+                await mystic.delete()
+            except Exception:
+                pass
+        return new_msg
+    except Exception as msg_err:
         LOGGER(__name__).error(
-            f"Thumbnail regeneration: get_thumb({vidid}) raised: {e}"
+            f"update_stream_ui: text-only send_message also failed for "
+            f"chat={original_chat_id}: {msg_err}"
         )
-        return None
+        raise
 
-
-async def _safe_reencode_thumbnail(img: Union[str, None]) -> Union[str, None]:
-    """Re-encode the existing image as a clean JPEG without changing its
-    visual design. Useful when the original PNG is somehow rejected by
-    Telegram (e.g. unusual ICC profile, exotic compression)."""
-    if not img or not isinstance(img, str):
-        return None
-    if img.startswith(("http://", "https://")):
-        return None  # cannot re-encode a URL
-
-    try:
-        with PILImage.open(img) as im:
-            rgb = im.convert("RGB")
-            temp_path = img + ".reencoded.jpg"
-            rgb.save(temp_path, "JPEG", quality=95)
-        LOGGER(__name__).info(
-            f"Thumbnail re-encode: saved JPEG copy to {temp_path}"
-        )
-        return temp_path
-    except Exception as e:
-        LOGGER(__name__).error(
-            f"Thumbnail re-encode failed for {img}: {e}"
-        )
-        return None
-
-
-async def _prepare_thumbnail(img: Union[str, None]) -> Union[str, None]:
-    """Validate the thumbnail returned by get_thumb() and attempt recovery
-    (regeneration + JPEG re-encode) if it is invalid.
-
-    Returns a validated local file path / URL that is safe to pass to
-    send_photo, or ``None`` if all recovery attempts failed (caller should
-    fall back to a text-only panel).
-    """
-    is_valid, validated, info = await _validate_thumbnail(img)
-    LOGGER(__name__).info(f"Thumbnail prepare: initial validation → {info}")
-
-    if is_valid:
-        return validated
-
-    # Attempt 1: regenerate via get_thumb (extract vidid from cache path)
-    vidid = _extract_vidid_from_path(img)
-    if vidid:
-        LOGGER(__name__).warning(
-            f"Thumbnail prepare: attempting regeneration for vidid={vidid}"
-        )
-        regenerated = await _regenerate_thumbnail(vidid, img)
-        if regenerated:
-            is_valid, validated, info = await _validate_thumbnail(regenerated)
-            LOGGER(__name__).info(
-                f"Thumbnail prepare: post-regeneration validation → {info}"
-            )
-            if is_valid:
-                return validated
-            # Attempt 2: re-encode the regenerated file as JPEG
-            reencoded = await _safe_reencode_thumbnail(regenerated)
-            if reencoded:
-                is_valid, validated, info = await _validate_thumbnail(reencoded)
-                if is_valid:
-                    LOGGER(__name__).info(
-                        f"Thumbnail prepare: JPEG re-encode after regeneration OK"
-                    )
-                    return validated
-    else:
-        # No vidid available (e.g. static config URL that is dead) — try to
-        # re-encode if it happens to be a local file
-        if img and isinstance(img, str) and not img.startswith(("http://", "https://")):
-            reencoded = await _safe_reencode_thumbnail(img)
-            if reencoded:
-                is_valid, validated, info = await _validate_thumbnail(reencoded)
-                if is_valid:
-                    LOGGER(__name__).info(
-                        f"Thumbnail prepare: JPEG re-encode OK"
-                    )
-                    return validated
-
-    LOGGER(__name__).error(
-        f"Thumbnail prepare: all recovery attempts failed for img={img}"
-    )
-    return None
-
-
-# ---------------------------------------------------------------------------
-# Panel update / creation
-# ---------------------------------------------------------------------------
 
 async def update_stream_ui(
     chat_id,
@@ -220,27 +130,24 @@ async def update_stream_ui(
     caption,
     button,
 ):
-    # Errors that indicate the panel message reference itself is no longer
-    # usable (deleted, in another chat, too old to edit, etc.).
-    _INVALID_MSG_REFS = (
-        MessageIdInvalid,
-        MessageNotModified,
-    )
+    """Update or create the playback panel.
 
-    # Errors that indicate the photo/media payload is unusable.
+    Thumbnail ON  → use img (validated local file) for a photo panel;
+                    if img is None/invalid, fall back to text-only.
+    Thumbnail OFF → always use text-only panel.
+
+    Safety guarantees:
+      - mystic is NEVER deleted before a replacement panel exists
+      - edit_media is only attempted when mystic actually contains a photo
+      - URLs are NEVER passed to send_photo (thumbnails.py no longer returns
+        URLs, but this is a defensive check)
+    """
+    _INVALID_MSG_REFS = (MessageIdInvalid, MessageNotModified)
     _INVALID_PHOTO_ERRORS = (
-        DocumentInvalid,
-        MediaInvalid,
-        MediaEmpty,
-        PhotoInvalid,
-        PhotoInvalidDimensions,
-        PhotoSaveFileInvalid,
-        SendMessageMediaInvalid,
-        ExternalUrlInvalid,
-        WebpageCurlFailed,
-        WebpageMediaEmpty,
-        WebpageNotFound,
-        WebpageUrlInvalid,
+        DocumentInvalid, MediaInvalid, MediaEmpty, PhotoInvalid,
+        PhotoInvalidDimensions, PhotoSaveFileInvalid, SendMessageMediaInvalid,
+        ExternalUrlInvalid, WebpageCurlFailed, WebpageMediaEmpty,
+        WebpageNotFound, WebpageUrlInvalid,
     )
 
     markup = InlineKeyboardMarkup(button)
@@ -249,17 +156,18 @@ async def update_stream_ui(
     # THUMBNAIL ON path
     # ------------------------------------------------------------------
     if await is_thumb_on(chat_id):
-        # Validate + attempt regeneration / re-encode BEFORE calling send_photo
-        prepared_img = await _prepare_thumbnail(img)
+        # Validate the thumbnail — only accept real local image files
+        if _validate_local_thumbnail(img):
+            # We have a valid local image → try to use it
+            #
+            # Determine whether mystic is a PHOTO message (can edit_media)
+            # or a TEXT message (must send a fresh photo panel).
+            is_photo_msg = bool(getattr(mystic, "photo", None)) if mystic else False
 
-        if prepared_img is not None:
-            # We have a validated image → try edit_media first (in-place),
-            # then send_photo. mystic is only deleted AFTER a replacement
-            # message has been successfully created.
-            if mystic:
+            if mystic and is_photo_msg:
                 try:
                     return await mystic.edit_media(
-                        media=InputMediaPhoto(prepared_img, caption=caption, has_spoiler=True),
+                        media=InputMediaPhoto(img, caption=caption, has_spoiler=True),
                         reply_markup=markup,
                     )
                 except _INVALID_MSG_REFS as edit_err:
@@ -273,12 +181,13 @@ async def update_stream_ui(
                         f"update_stream_ui: unexpected edit_media error for "
                         f"chat={chat_id}: {edit_err}. Will send a fresh photo panel."
                     )
+                # If we reach here, edit_media failed → fall through to send_photo
 
-            # Send a fresh photo message FIRST, then delete the old mystic
+            # Send a fresh photo message FIRST, then delete old mystic AFTER
             try:
                 new_msg = await app.send_photo(
                     original_chat_id,
-                    photo=prepared_img,
+                    photo=img,
                     has_spoiler=True,
                     caption=caption,
                     reply_markup=markup,
@@ -295,101 +204,27 @@ async def update_stream_ui(
                     f"update_stream_ui: send_photo failed for chat={original_chat_id} "
                     f"({photo_err}). Falling back to text-only playback panel."
                 )
+                # Fall through to text-only fallback below
             except Exception as photo_err:
                 LOGGER(__name__).error(
                     f"update_stream_ui: send_photo raised unexpected error for "
                     f"chat={original_chat_id}: {photo_err}. Falling back to text-only."
                 )
+                # Fall through to text-only fallback below
         else:
             LOGGER(__name__).error(
-                f"update_stream_ui: thumbnail could not be validated/regenerated "
-                f"for chat={chat_id}. Skipping send_photo, using text-only panel."
+                f"update_stream_ui: thumbnail is invalid/None for chat={chat_id} "
+                f"(img={img}). Using text-only panel fallback."
             )
 
         # ----- text-only fallback (thumbnail invalid OR send_photo failed) -----
-        if mystic:
-            try:
-                return await mystic.edit_text(text=caption, reply_markup=markup)
-            except _INVALID_MSG_REFS as edit_err:
-                LOGGER(__name__).warning(
-                    f"update_stream_ui: edit_text (text fallback) failed for "
-                    f"chat={chat_id}: {edit_err}. Will send a fresh text panel."
-                )
-            except Exception as edit_err:
-                # Maybe mystic was a photo message → try edit_caption
-                try:
-                    await mystic.edit_caption(caption=caption, reply_markup=markup)
-                    return mystic
-                except Exception:
-                    LOGGER(__name__).error(
-                        f"update_stream_ui: edit_text/edit_caption both failed "
-                        f"for chat={chat_id}: {edit_err}. Sending fresh text panel."
-                    )
-
-        try:
-            new_msg = await app.send_message(
-                original_chat_id,
-                text=caption,
-                reply_markup=markup,
-            )
-            # Replacement succeeded — now safe to delete old mystic
-            if mystic:
-                try:
-                    await mystic.delete()
-                except Exception:
-                    pass
-            return new_msg
-        except Exception as msg_err:
-            LOGGER(__name__).error(
-                f"update_stream_ui: text-only send_message also failed for "
-                f"chat={original_chat_id}: {msg_err}"
-            )
-            raise
+        return await _send_text_panel(original_chat_id, caption, markup, mystic)
 
     # ------------------------------------------------------------------
     # THUMBNAIL OFF path (text-only)
     # ------------------------------------------------------------------
     else:
-        if mystic:
-            try:
-                return await mystic.edit_text(
-                    text=caption,
-                    reply_markup=markup,
-                )
-            except _INVALID_MSG_REFS as edit_err:
-                LOGGER(__name__).warning(
-                    f"update_stream_ui: edit_text failed for chat={chat_id} "
-                    f"(mystic id={getattr(mystic, 'id', None)}): {edit_err}. "
-                    f"Will send a fresh text panel."
-                )
-            except Exception as edit_err:
-                try:
-                    await mystic.edit_caption(caption=caption, reply_markup=markup)
-                    return mystic
-                except Exception:
-                    LOGGER(__name__).error(
-                        f"update_stream_ui: edit_text/edit_caption both failed "
-                        f"for chat={chat_id}: {edit_err}. Sending fresh text panel."
-                    )
-
-        try:
-            new_msg = await app.send_message(
-                original_chat_id,
-                text=caption,
-                reply_markup=markup,
-            )
-            if mystic:
-                try:
-                    await mystic.delete()
-                except Exception:
-                    pass
-            return new_msg
-        except Exception as msg_err:
-            LOGGER(__name__).error(
-                f"update_stream_ui: send_message failed for "
-                f"chat={original_chat_id}: {msg_err}"
-            )
-            raise
+        return await _send_text_panel(original_chat_id, caption, markup, mystic)
 
 
 async def update_queue_ui(
