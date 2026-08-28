@@ -103,35 +103,35 @@ def stream_markup_timer(
             ],
             [
                 InlineKeyboardButton(
-                    text="▷",
+                    text="▶",
                     callback_data=f"ADMIN Resume|{chat_id}",
                 ),
                 InlineKeyboardButton(
-                    text="II",
+                    text="⏸",
                     callback_data=f"ADMIN Pause|{chat_id}",
                 ),
                 InlineKeyboardButton(
-                    text="‣‣I",
+                    text="⏭",
                     callback_data=f"ADMIN Skip|{chat_id}",
                 ),
                 InlineKeyboardButton(
-                    text="↻",
+                    text="🔁",
                     callback_data=f"ADMIN Replay|{chat_id}",
                 ),
                 InlineKeyboardButton(
-                    text="▢",
+                    text="⏹",
                     callback_data=f"ADMIN Stop|{chat_id}",
                 ),
             ],
             [
                 InlineKeyboardButton(
-                    text="☰ ᴍᴏʀᴇ",
+                    text="☰ More",
                     callback_data=f"ADMIN More|{chat_id}",
                 ),
             ],
             [
                 InlineKeyboardButton(
-                    text="🗑",
+                    text="🗑 Delete",
                     callback_data="close",
                 ),
             ],
@@ -148,23 +148,23 @@ def stream_markup_timer(
             ],
             [
                 InlineKeyboardButton(
-                    text="▷",
+                    text="▶",
                     callback_data=f"ADMIN Resume|{chat_id}",
                 ),
                 InlineKeyboardButton(
-                    text="II",
+                    text="⏸",
                     callback_data=f"ADMIN Pause|{chat_id}",
                 ),
                 InlineKeyboardButton(
-                    text="‣‣I",
+                    text="⏭",
                     callback_data=f"ADMIN Skip|{chat_id}",
                 ),
                 InlineKeyboardButton(
-                    text="↻",
+                    text="🔁",
                     callback_data=f"ADMIN Replay|{chat_id}",
                 ),
                 InlineKeyboardButton(
-                    text="▢",
+                    text="⏹",
                     callback_data=f"ADMIN Stop|{chat_id}",
                 ),
             ],
@@ -174,17 +174,17 @@ def stream_markup_timer(
                     callback_data=f"ADMIN Autoplay|{chat_id}",
                 ),
                 InlineKeyboardButton(
-                    text="Thumb",
+                    text="Thumbnail",
                     callback_data=f"ADMIN Thumb|{chat_id}",
                 ),
             ],
             [
                 InlineKeyboardButton(
-                    text="⟵ ʙᴀᴄᴋ",
+                    text="⟵ Back",
                     callback_data=f"ADMIN Back|{chat_id}",
                 ),
                 InlineKeyboardButton(
-                    text="🗑",
+                    text="🗑 Delete",
                     callback_data="close",
                 ),
             ],
@@ -205,35 +205,35 @@ def stream_markup(
         buttons = [
             [
                 InlineKeyboardButton(
-                    text="▷",
+                    text="▶",
                     callback_data=f"ADMIN Resume|{chat_id}",
                 ),
                 InlineKeyboardButton(
-                    text="II",
+                    text="⏸",
                     callback_data=f"ADMIN Pause|{chat_id}",
                 ),
                 InlineKeyboardButton(
-                    text="‣‣I",
+                    text="⏭",
                     callback_data=f"ADMIN Skip|{chat_id}",
                 ),
                 InlineKeyboardButton(
-                    text="↻",
+                    text="🔁",
                     callback_data=f"ADMIN Replay|{chat_id}",
                 ),
                 InlineKeyboardButton(
-                    text="▢",
+                    text="⏹",
                     callback_data=f"ADMIN Stop|{chat_id}",
                 ),
             ],
             [
                 InlineKeyboardButton(
-                    text="☰ ᴍᴏʀᴇ",
+                    text="☰ More",
                     callback_data=f"ADMIN More|{chat_id}",
                 ),
             ],
             [
                 InlineKeyboardButton(
-                    text="🗑",
+                    text="🗑 Delete",
                     callback_data="close",
                 ),
             ],
@@ -244,43 +244,43 @@ def stream_markup(
         buttons = [
             [
                 InlineKeyboardButton(
-                    text="▷",
+                    text="▶",
                     callback_data=f"ADMIN Resume|{chat_id}",
                 ),
                 InlineKeyboardButton(
-                    text="II",
+                    text="⏸",
                     callback_data=f"ADMIN Pause|{chat_id}",
                 ),
                 InlineKeyboardButton(
-                    text="‣‣I",
+                    text="⏭",
                     callback_data=f"ADMIN Skip|{chat_id}",
                 ),
                 InlineKeyboardButton(
-                    text="↻",
+                    text="🔁",
                     callback_data=f"ADMIN Replay|{chat_id}",
                 ),
                 InlineKeyboardButton(
-                    text="▢",
+                    text="⏹",
                     callback_data=f"ADMIN Stop|{chat_id}",
                 ),
             ],
             [
                 InlineKeyboardButton(
-                    text="♫",
+                    text="Autoplay",
                     callback_data=f"ADMIN Autoplay|{chat_id}",
                 ),
                 InlineKeyboardButton(
-                    text="⎘",
+                    text="Thumbnail",
                     callback_data=f"ADMIN Thumb|{chat_id}",
                 ),
             ],
             [
                 InlineKeyboardButton(
-                    text="⟵ ʙᴀᴄᴋ",
+                    text="⟵ Back",
                     callback_data=f"ADMIN Back|{chat_id}",
                 ),
                 InlineKeyboardButton(
-                    text="🗑",
+                    text="🗑 Delete",
                     callback_data="close",
                 ),
             ],
