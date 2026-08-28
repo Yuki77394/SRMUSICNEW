@@ -447,60 +447,32 @@ class Call(PyTgCalls):
                         vidid = popped["vidid"]
                         related = await YouTube.get_related_videos(vidid)
                         if not related:
-                            LOGGER(__name__).warning(
-                                f"Autoplay: No related videos found for vidid={vidid} chat={chat_id}"
-                            )
-                        else:
-                            random.shuffle(related)
-                            autoplay_added = False
-                            # Try up to 5 candidates to find one that resolves to a
-                            # playable track instead of silently giving up on the
-                            # first failure (which previously left autoplay enabled
-                            # but no next song actually started).
-                            for video_id in related[:5]:
-                                try:
-                                    details, track_id = await YouTube.track(video_id, True)
-                                except Exception as track_err:
-                                    LOGGER(__name__).error(
-                                        f"Autoplay: YouTube.track failed for "
-                                        f"video_id={video_id} chat={chat_id}: {track_err}"
-                                    )
-                                    continue
-                                if not details or not details.get("title"):
-                                    continue
-                                try:
-                                    from SWAGGYMUSIC.utils.stream.queue import put_queue
-                                    await put_queue(
-                                        chat_id,
-                                        popped["chat_id"],
-                                        f"vid_{video_id}",
-                                        details["title"],
-                                        details["duration_min"],
-                                        popped["by"],
-                                        video_id,
-                                        popped["user_id"],
-                                        popped["streamtype"],
-                                        forceplay=True,
-                                    )
-                                    autoplay_added = True
-                                    break
-                                except Exception as pq_err:
-                                    LOGGER(__name__).error(
-                                        f"Autoplay: put_queue failed for "
-                                        f"video_id={video_id} chat={chat_id}: {pq_err}"
-                                    )
-                                    continue
-                            if not autoplay_added:
-                                LOGGER(__name__).error(
-                                    f"Autoplay: exhausted all related candidates "
-                                    f"for vidid={vidid} chat={chat_id}"
-                                )
-                            # Re-fetch check because put_queue may have added a song
-                            check = db.get(chat_id)
-                    except Exception as ap_err:
-                        LOGGER(__name__).error(
-                            f"Autoplay failed unexpectedly for chat={chat_id}: {ap_err}"
+                            return await _clear_(chat_id)
+                        video_id = random.choice(related)
+                        try:
+                            details, track_id = await YouTube.track(video_id, True)
+                            if not details.get("title"):
+                                raise Exception("no details")
+                        except:
+                            raise Exception("fetch fail")
+
+                        from SWAGGYMUSIC.utils.stream.queue import put_queue
+                        await put_queue(
+                            chat_id,
+                            popped["chat_id"],
+                            f"vid_{video_id}",
+                            details["title"],
+                            details["duration_min"],
+                            popped["by"],
+                            video_id,
+                            popped["user_id"],
+                            popped["streamtype"],
+                            forceplay=True,
                         )
+                        # Re-fetch check because put_queue added a song
+                        check = db.get(chat_id)
+                    except:
+                        pass
 
                 if not check:
                     await _clear_(chat_id)
