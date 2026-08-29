@@ -191,8 +191,8 @@ queue_6 : "<b>🕚 ᴅᴜʀʌᴛɪᴏɴ :</b> ᴜɴᴋɴᴏᴡɴ ᴅᴜʀʌᴛɪ
 queue_7 : "\nᴄʟɪᴄᴋ ᴏɴ ʙᴜᴛᴛᴏɴ ʙєʟᴏᴡ ᴛᴏ ɢєᴛ ᴡʜᴏʟє ǫᴜєᴜєᴅ ʟɪsᴛ."
 queue_8 : "<b>{0} ᴘʟʌʏєʀ</b>\n\n🎄 <b>sᴛʀєʌϻɪɴɢ :</b> {1}\n\n🔗 <b>sᴛʀєʌϻ ᴛʏᴘє :</b> {2}\n🥀 <b>ʀєǫᴜєsᴛєᴅ ʙʏ :</b> {3}\n{4}"
 
-stream_1 : "<blockquote>➲ <b>sᴛʌʀᴛєᴅ sᴛʀєʌϻɪɴɢ</b></blockquote>\n\n<blockquote><b>▸ ᴛɪᴛʟє :</b> <a href={0}>{1}</a>\n<b>▸ ᴅᴜʀʌᴛɪᴏɴ :</b> {2} ϻɪɴᴜᴛєs\n<b>▸ ʀєǫᴜєsᴛєᴅ ʙʏ :</b> → {3}</blockquote>"
-stream_2 : "<blockquote>➲ <b>sᴛʌʀᴛєᴅ sᴛʀєʌϻɪɴɢ</b></blockquote>\n\n<blockquote><b>▸ sᴛʀєʌϻ ᴛʏᴘє :</b> ʟɪᴠє sᴛʀєʌϻ [ᴜʀʟ]\n<b>▸ ʀєǫᴜєsᴛєᴅ ʙʏ :</b> → {0}</blockquote>"
+stream_1 : "<blockquote>➲ <b>sᴛʌʀᴛєᴅ sᴛʀєʌϻɪɴɢ</b></blockquote>\n\n<blockquote><b>▸ ᴛɪᴛʟє :</b> <a href={0}>{1}</a>\n<b>▸ ᴅᴜʀʌᴛɪᴏɴ :</b> {2} ϻɪɴᴜᴛєs\n<b>▸ ᴘʟᴀʏєᴅ ʙʏ :</b> → {3}</blockquote>"
+stream_2 : "<blockquote>➲ <b>sᴛʌʀᴛєᴅ sᴛʀєʌϻɪɴɢ</b></blockquote>\n\n<blockquote><b>▸ sᴛʀєʌϻ ᴛʏᴘє :</b> ʟɪᴠє sᴛʀєʌϻ [ᴜʀʟ]\n<b>▸ ᴘʟᴀʏєᴅ ʙʏ :</b> → {0}</blockquote>"
 V_C_1 : "ғᴇᴛᴄʜɪɴɢ ᴘᴀʀᴛɪᴄɪᴘᴀɴᴛs ʟɪsᴛ...."
 V_C_2 : "<blockquote expandable>➜ɴᴀᴍᴇ: {0}\n ɪᴅ: {1}\n    ᴜsᴇʀɴᴀᴍᴇ: {2}\n    ᴠɪᴅᴇᴏ sʜᴀʀɪɴɢ: {3}\n    sᴄʀᴇᴇɴ sʜᴀʀɪɴɢ: {4}\n    ɪs ʜᴀɴᴅ ʀᴀɪsᴇᴅ: {5}\n    ᴍᴜᴛᴇᴅ: {6}:\n    **sᴘᴇᴀᴋɪɴɢ** : {7}\n    **ʟᴇғᴛᴇᴅ ғʀᴏᴍ ɢʀᴏᴜᴘ:** {8}</blockquote>"
 V_C_3 : "ɴᴏ ᴘᴀʀᴛɪᴄɪᴘᴀɴᴛs ɪɴ ᴠᴏɪᴄᴇ ᴄʜᴀᴛ"
