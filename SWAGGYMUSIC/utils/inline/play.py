@@ -97,12 +97,6 @@ def stream_markup_timer(
         buttons = [
             [
                 InlineKeyboardButton(
-                    text=f"{played} {bar} {remaining}",
-                    url=f"https://t.me/{app.username}?startgroup=true",
-                )
-            ],
-            [
-                InlineKeyboardButton(
                     text="▷",
                     callback_data=f"ADMIN Resume|{chat_id}",
                 ),
@@ -128,8 +122,6 @@ def stream_markup_timer(
                     text="☰ ᴍᴏʀᴇ",
                     callback_data=f"ADMIN More|{chat_id}",
                 ),
-            ],
-            [
                 InlineKeyboardButton(
                     text="🗑",
                     callback_data="close",
@@ -140,12 +132,6 @@ def stream_markup_timer(
     else:
 
         buttons = [
-            [
-                InlineKeyboardButton(
-                    text=f"{played} {bar} {remaining}",
-                    url=f"https://t.me/{app.username}?startgroup=true",
-                )
-            ],
             [
                 InlineKeyboardButton(
                     text="▷",
@@ -230,8 +216,6 @@ def stream_markup(
                     text="☰ ᴍᴏʀᴇ",
                     callback_data=f"ADMIN More|{chat_id}",
                 ),
-            ],
-            [
                 InlineKeyboardButton(
                     text="🗑",
                     callback_data="close",
