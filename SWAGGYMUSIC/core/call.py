@@ -23,7 +23,7 @@ import config
 from SWAGGYMUSIC import LOGGER, YouTube, app
 from SWAGGYMUSIC.misc import db
 from SWAGGYMUSIC.utils.database import (add_active_chat, add_active_video_chat,
-                                       get_filter, get_lang, get_loop,
+                                       autoplay_off, get_filter, get_lang, get_loop,
                                        group_assistant, is_autoend,
                                        is_autoplay_on, is_thumb_on,
                                        music_on, remove_active_chat,
@@ -65,6 +65,10 @@ async def _clear_(chat_id: int):
     db[chat_id] = []
     await remove_active_video_chat(chat_id)
     await remove_active_chat(chat_id)
+    try:
+        await autoplay_off(chat_id)
+    except Exception:
+        pass
 
 
 class Call(PyTgCalls):
