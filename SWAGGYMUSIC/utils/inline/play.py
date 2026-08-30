@@ -10,6 +10,7 @@
 import math
 from typing import Union
 
+from pyrogram.enums import ButtonStyle
 from pyrogram.types import InlineKeyboardButton
 
 from SWAGGYMUSIC import app
@@ -121,10 +122,12 @@ def stream_markup_timer(
                 InlineKeyboardButton(
                     text="☰ ᴍᴏʀᴇ",
                     callback_data=f"ADMIN More|{chat_id}",
+                    style=ButtonStyle.PRIMARY,
                 ),
                 InlineKeyboardButton(
                     text="🗑",
                     callback_data="close",
+                    style=ButtonStyle.DANGER,
                 ),
             ],
         ]
@@ -158,20 +161,24 @@ def stream_markup_timer(
                 InlineKeyboardButton(
                     text="Autoplay",
                     callback_data=f"ADMIN Autoplay|{chat_id}",
+                    style=ButtonStyle.PRIMARY,
                 ),
                 InlineKeyboardButton(
                     text="Thumb",
                     callback_data=f"ADMIN Thumb|{chat_id}",
+                    style=ButtonStyle.SUCCESS,
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text="⟵ ʙᴀᴄᴋ",
                     callback_data=f"ADMIN Back|{chat_id}",
+                    style=ButtonStyle.DANGER,
                 ),
                 InlineKeyboardButton(
                     text="🗑",
                     callback_data="close",
+                    style=ButtonStyle.DANGER,
                 ),
             ],
         ]
@@ -215,10 +222,12 @@ def stream_markup(
                 InlineKeyboardButton(
                     text="☰ ᴍᴏʀᴇ",
                     callback_data=f"ADMIN More|{chat_id}",
+                    style=ButtonStyle.PRIMARY,
                 ),
                 InlineKeyboardButton(
                     text="🗑",
                     callback_data="close",
+                    style=ButtonStyle.DANGER,
                 ),
             ],
         ]
@@ -252,20 +261,24 @@ def stream_markup(
                 InlineKeyboardButton(
                     text="♫",
                     callback_data=f"ADMIN Autoplay|{chat_id}",
+                    style=ButtonStyle.PRIMARY,
                 ),
                 InlineKeyboardButton(
                     text="⎘",
                     callback_data=f"ADMIN Thumb|{chat_id}",
+                    style=ButtonStyle.SUCCESS,
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text="⟵ ʙᴀᴄᴋ",
                     callback_data=f"ADMIN Back|{chat_id}",
+                    style=ButtonStyle.DANGER,
                 ),
                 InlineKeyboardButton(
                     text="🗑",
                     callback_data="close",
+                    style=ButtonStyle.DANGER,
                 ),
             ],
         ]
