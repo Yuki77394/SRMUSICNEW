@@ -400,7 +400,6 @@ async def play_commnd(
         streamtype = "youtube"
     if str(playmode) == "Direct":
     if not plist_type:
-
         if not details:
             return await mystic.edit_text(_["play_3"])
 
@@ -413,7 +412,7 @@ async def play_commnd(
                 return await mystic.edit_text(
                     _["play_6"].format(
                         config.DURATION_LIMIT_MIN,
-                        app.mention
+                        app.mention,
                     )
                 )
         else:
