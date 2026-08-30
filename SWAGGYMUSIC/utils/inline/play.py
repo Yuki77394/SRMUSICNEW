@@ -166,14 +166,14 @@ def stream_markup_timer(
                 InlineKeyboardButton(
                     text="Thumb",
                     callback_data=f"ADMIN Thumb|{chat_id}",
-                    style=ButtonStyle.SUCCESS,
+                    style=ButtonStyle.PRIMARY,
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text="⟵ ʙᴀᴄᴋ",
                     callback_data=f"ADMIN Back|{chat_id}",
-                    style=ButtonStyle.DANGER,
+                    style=ButtonStyle.SUCCESS,
                 ),
                 InlineKeyboardButton(
                     text="🗑",
@@ -266,14 +266,14 @@ def stream_markup(
                 InlineKeyboardButton(
                     text="⎘",
                     callback_data=f"ADMIN Thumb|{chat_id}",
-                    style=ButtonStyle.SUCCESS,
+                    style=ButtonStyle.PRIMARY,
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text="⟵ ʙᴀᴄᴋ",
                     callback_data=f"ADMIN Back|{chat_id}",
-                    style=ButtonStyle.DANGER,
+                    style=ButtonStyle.SUCCESS,
                 ),
                 InlineKeyboardButton(
                     text="🗑",
