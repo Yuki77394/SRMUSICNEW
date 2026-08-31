@@ -141,23 +141,13 @@ async def support(client, CallbackQuery, _):
             [
                 [
                     InlineKeyboardButton(
-                        text="⌯ ᴅᴇᴠ ⌯", 
+                        text="⌯ ᴏᴡɴᴇʀ ⌯",
                         user_id=config.OWNER_ID
                     )
                 ],
                 [
                     InlineKeyboardButton(
-                        text="⌯ sᴜᴘᴘᴏʀᴛ ⌯", 
-                        url=config.SUPPORT_CHAT
-                    ),
-                    InlineKeyboardButton(
-                        text="⌯ ᴄʜᴀɴɴᴇʟ ⌯", 
-                        url=config.SUPPORT_CHANNEL
-                    ),
-                ],
-                [
-                    InlineKeyboardButton(
-                        text="⌯ ʙᴀᴄᴋ ⌯", 
+                        text="⌯ ʙᴀᴄᴋ ⌯",
                         callback_data="settingsback_helper"
                     )
                 ],

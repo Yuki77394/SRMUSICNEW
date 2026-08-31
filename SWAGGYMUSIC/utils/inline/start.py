@@ -45,18 +45,12 @@ def private_panel(_):
         ],
         [
             InlineKeyboardButton(
-                text=_["S_B_2"],
+                text="⌯ ᴏᴡɴᴇʀ ⌯",
                 callback_data="SWAGGY_MUSIC"
             ),
             InlineKeyboardButton(
-                text="⌯ ꜱᴏᴜʀᴄᴇ ⌯",
-                callback_data="gib_source"
-            ),
-        ],
-        [
-            InlineKeyboardButton(
-                text="⌯ ʙᴏᴛꜱ ꜱᴛᴀᴛꜱ ⌯",
-                url="https://t.me/ll_ROYAL_ABOUT_ll"
+                text="⌯ ɴᴇᴛᴡᴏʀᴋ ⌯",
+                url=config.SUPPORT_CHANNEL
             ),
         ],
     ]
