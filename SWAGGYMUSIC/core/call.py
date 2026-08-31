@@ -409,7 +409,7 @@ class Call(PyTgCalls):
         except exceptions.NoActiveGroupCall:
             raise AssistantErr(_["call_8"])
         except exceptions.NoAudioSourceFound:
-            raise AssistantErr(_["call_10"])
+            raise AssistantErr(_["call_11"])
         except (ConnectionNotFound, TelegramServerError):
             raise AssistantErr(_["call_10"])
         except Exception:

@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import random
 import re
@@ -28,6 +29,148 @@ os.makedirs(
     DOWNLOAD_DIR,
     exist_ok=True,
 )
+
+
+async def _has_audio_stream(file_path: str) -> bool:
+    """Verify that a media file actually contains an audio stream using ffprobe.
+
+    Returns True if the file has at least one audio stream, False otherwise
+    (including when ffprobe is unavailable or the file is corrupt).
+    """
+    if not file_path or not os.path.isfile(file_path):
+        return False
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "a",
+            "-show_entries",
+            "stream=codec_type",
+            "-of",
+            "json",
+            file_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=15)
+        if proc.returncode != 0:
+            return False
+        data = json.loads(stdout.decode("utf-8", errors="ignore"))
+        streams = data.get("streams", [])
+        return any(s.get("codec_type") == "audio" for s in streams)
+    except Exception:
+        return False
+
+
+async def _has_video_stream(file_path: str) -> bool:
+    """Verify that a media file actually contains a video stream using ffprobe."""
+    if not file_path or not os.path.isfile(file_path):
+        return False
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "v",
+            "-show_entries",
+            "stream=codec_type",
+            "-of",
+            "json",
+            file_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=15)
+        if proc.returncode != 0:
+            return False
+        data = json.loads(stdout.decode("utf-8", errors="ignore"))
+        streams = data.get("streams", [])
+        return any(s.get("codec_type") == "video" for s in streams)
+    except Exception:
+        return False
+
+
+async def _ytdlp_fallback(link: str, media_type: str) -> Union[str, None]:
+    """Fallback downloader using yt-dlp directly when the API download fails
+    or produces a file with no audio/video stream.
+
+    media_type: 'audio' or 'video'
+    """
+    video_id = extract_video_id(link)
+    if not video_id:
+        return None
+
+    ext = "mp4" if media_type == "video" else "mp3"
+    file_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.{ext}")
+
+    if os.path.isfile(file_path) and os.path.getsize(file_path) > 1024:
+        if media_type == "audio" and await _has_audio_stream(file_path):
+            return file_path
+        if media_type == "video" and await _has_video_stream(file_path):
+            return file_path
+        try:
+            os.remove(file_path)
+        except Exception:
+            pass
+
+    out_template = os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s")
+
+    if media_type == "audio":
+        ydl_opts = {
+            "format": "bestaudio/best",
+            "outtmpl": out_template,
+            "quiet": True,
+            "no_warnings": True,
+            "noprogress": True,
+            "default_search": "auto",
+            "source_address": "0.0.0.0",
+            "nocheckcertificate": True,
+            "postprocessors": [
+                {
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": "mp3",
+                    "preferredquality": "192",
+                }
+            ],
+        }
+    else:
+        ydl_opts = {
+            "format": "best[ext=mp4][height<=720]/best[ext=mp4]/best",
+            "outtmpl": out_template,
+            "quiet": True,
+            "no_warnings": True,
+            "noprogress": True,
+            "default_search": "auto",
+            "source_address": "0.0.0.0",
+            "nocheckcertificate": True,
+            "merge_output_format": "mp4",
+        }
+
+    def _do_download():
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([link])
+
+    try:
+        await asyncio.get_event_loop().run_in_executor(None, _do_download)
+    except Exception:
+        return None
+
+    if os.path.isfile(file_path) and os.path.getsize(file_path) > 1024:
+        if media_type == "audio" and await _has_audio_stream(file_path):
+            return file_path
+        if media_type == "video" and await _has_video_stream(file_path):
+            return file_path
+        try:
+            os.remove(file_path)
+        except Exception:
+            pass
+
+    return None
 
 
 def time_to_seconds(time):
@@ -241,6 +384,20 @@ async def _api_download(
                     file_path,
                 )
 
+                if media_type == "audio" and not await _has_audio_stream(file_path):
+                    try:
+                        os.remove(file_path)
+                    except Exception:
+                        pass
+                    return None
+
+                if media_type == "video" and not await _has_video_stream(file_path):
+                    try:
+                        os.remove(file_path)
+                    except Exception:
+                        pass
+                    return None
+
                 return file_path
 
     except Exception:
@@ -264,7 +421,15 @@ async def download_song(
     link: str,
 ) -> str:
 
-    return await _api_download(
+    result = await _api_download(
+        link,
+        "audio",
+    )
+
+    if result:
+        return result
+
+    return await _ytdlp_fallback(
         link,
         "audio",
     )
@@ -274,7 +439,15 @@ async def download_video(
     link: str,
 ) -> str:
 
-    return await _api_download(
+    result = await _api_download(
+        link,
+        "video",
+    )
+
+    if result:
+        return result
+
+    return await _ytdlp_fallback(
         link,
         "video",
     )
