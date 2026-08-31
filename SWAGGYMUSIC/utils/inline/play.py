@@ -110,6 +110,7 @@ def stream_markup_timer(
                 InlineKeyboardButton(
                     text="‣‣I",
                     callback_data=f"ADMIN Skip|{chat_id}",
+                    style=ButtonStyle.PRIMARY,
                 ),
                 InlineKeyboardButton(
                     text="↻",
@@ -153,6 +154,7 @@ def stream_markup_timer(
                 InlineKeyboardButton(
                     text="‣‣I",
                     callback_data=f"ADMIN Skip|{chat_id}",
+                    style=ButtonStyle.PRIMARY,
                 ),
                 InlineKeyboardButton(
                     text="↻",
@@ -218,6 +220,7 @@ def stream_markup(
                 InlineKeyboardButton(
                     text="‣‣I",
                     callback_data=f"ADMIN Skip|{chat_id}",
+                    style=ButtonStyle.PRIMARY,
                 ),
                 InlineKeyboardButton(
                     text="↻",
@@ -261,6 +264,7 @@ def stream_markup(
                 InlineKeyboardButton(
                     text="‣‣I",
                     callback_data=f"ADMIN Skip|{chat_id}",
+                    style=ButtonStyle.PRIMARY,
                 ),
                 InlineKeyboardButton(
                     text="↻",
