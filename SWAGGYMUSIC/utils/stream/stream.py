@@ -11,10 +11,11 @@ import os
 from random import randint
 from typing import Union
 
+from pyrogram.errors import MessageNotModified
 from pyrogram.types import InlineKeyboardMarkup, InputMediaPhoto
 
 import config
-from SWAGGYMUSIC import Carbon, YouTube, app
+from SWAGGYMUSIC import LOGGER, Carbon, YouTube, app
 from SWAGGYMUSIC.core.call import Alone
 from SWAGGYMUSIC.misc import db
 from SWAGGYMUSIC.utils.database import (add_active_video_chat, get_filter,
@@ -35,52 +36,96 @@ async def update_stream_ui(
     caption,
     button,
 ):
+    # Defensive: never let caption be empty — fall back to a minimal placeholder
+    if not caption:
+        caption = "➲ <b>Now Playing</b>"
+
+    markup = InlineKeyboardMarkup(button)
+
     if await is_thumb_on(chat_id):
         if mystic:
+            # Path A: try to edit existing message's media+caption in place
             try:
-                # If it's already a photo message, edit it
                 return await mystic.edit_media(
                     media=InputMediaPhoto(img, caption=caption, has_spoiler=True),
-                    reply_markup=InlineKeyboardMarkup(button),
+                    reply_markup=markup,
                 )
+            except MessageNotModified:
+                # Message content is identical — nothing to do, return as-is
+                return mystic
             except Exception:
+                # edit_media failed (e.g. text msg can't become photo msg,
+                # or message too old / deleted). Try edit_text as a fallback
+                # so the user at least sees the caption text + buttons.
                 try:
-                    await mystic.delete()
-                except:
-                    pass
-        return await app.send_photo(
-            original_chat_id,
-            photo=img,
-            has_spoiler=True,
-            caption=caption,
-            reply_markup=InlineKeyboardMarkup(button),
-        )
+                    return await mystic.edit_text(
+                        text=caption,
+                        reply_markup=markup,
+                    )
+                except Exception:
+                    # Last resort: delete the stale placeholder, then send fresh
+                    try:
+                        await mystic.delete()
+                    except Exception:
+                        pass
+        # Path B: send a brand-new photo message
+        try:
+            return await app.send_photo(
+                original_chat_id,
+                photo=img,
+                has_spoiler=True,
+                caption=caption,
+                reply_markup=markup,
+            )
+        except Exception as e:
+            LOGGER(__name__).warning(
+                f"update_stream_ui: send_photo failed for chat {original_chat_id}: {e}"
+            )
+            # If the photo upload fails, at least send the caption as text
+            # so the user isn't left with an empty/missing now-playing UI.
+            try:
+                return await app.send_message(
+                    original_chat_id,
+                    text=caption,
+                    reply_markup=markup,
+                )
+            except Exception as e2:
+                LOGGER(__name__).error(
+                    f"update_stream_ui: fallback send_message also failed: {e2}"
+                )
+                return None
     else:
         if mystic:
             try:
-                # If it's a text message, edit it
                 return await mystic.edit_text(
                     text=caption,
-                    reply_markup=InlineKeyboardMarkup(button),
+                    reply_markup=markup,
                 )
+            except MessageNotModified:
+                return mystic
             except Exception:
-                # If it was a photo message or edit failed, try to edit caption if photo
                 try:
                     await mystic.edit_caption(
                         caption=caption,
-                        reply_markup=InlineKeyboardMarkup(button),
+                        reply_markup=markup,
                     )
                     return mystic
                 except Exception:
                     try:
                         await mystic.delete()
-                    except:
+                    except Exception:
                         pass
-        return await app.send_message(
-            original_chat_id,
-            text=caption,
-            reply_markup=InlineKeyboardMarkup(button),
-        )
+        try:
+            return await app.send_message(
+                original_chat_id,
+                text=caption,
+                reply_markup=markup,
+            )
+        except Exception as e:
+            LOGGER(__name__).warning(
+                f"update_stream_ui: send_message failed for chat {original_chat_id}: {e}"
+            )
+            return None
 
 
 async def update_queue_ui(
