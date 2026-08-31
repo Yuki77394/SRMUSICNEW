@@ -31,25 +31,6 @@ from SWAGGYMUSIC.utils.logger import play_logs
 from SWAGGYMUSIC.utils.stream.stream import stream
 from config import BANNED_USERS, lyrical
 
-EMOJII = [
-    "🔥",
-    "💋",
-    "🥺",
-    "😒",
-    "💖",
-    "💘",
-    "💕",
-    "✨",
-    "🧪",
-    "🥰",
-    "🚩",
-    "🫦",
-    "💔",
-    "🦠",
-    "😓",
-    "🫧",
-]
-
 
 async def delete_after_delay(msg):
     try:
@@ -93,26 +74,7 @@ async def play_commnd(
     except Exception:
         pass
 
-    emoji = random.choice(
-        [
-            "🔥",
-            "💋",
-            "🥺",
-            "😒",
-            "💖",
-            "💘",
-            "💕",
-            "✨",
-            "🧪",
-            "🥰",
-            "🚩",
-            "🫦",
-            "💔",
-            "🦠",
-            "😓",
-            "🫧",
-        ]
-    )
+    emoji = "⚡"
     if False:  # thumbnails disabled
         mystic = await message.reply_photo(
             photo=config.STREAM_IMG_URL,
