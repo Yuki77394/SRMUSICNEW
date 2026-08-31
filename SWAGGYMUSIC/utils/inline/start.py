@@ -46,11 +46,11 @@ def private_panel(_):
         [
             InlineKeyboardButton(
                 text="⌯ ᴏᴡɴᴇʀ ⌯",
-                callback_data="SWAGGY_MUSIC"
+                user_id=config.OWNER_ID
             ),
             InlineKeyboardButton(
                 text="⌯ ɴᴇᴛᴡᴏʀᴋ ⌯",
-                url=config.SUPPORT_CHANNEL
+                url="https://t.me/SpIcYxNeTwOrK"
             ),
         ],
     ]
