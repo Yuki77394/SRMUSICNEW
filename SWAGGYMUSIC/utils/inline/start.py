@@ -7,6 +7,7 @@
 #
 # All rights reserved.
 
+from pyrogram.enums import ButtonStyle
 from pyrogram.types import InlineKeyboardButton
 
 import config
@@ -34,23 +35,27 @@ def private_panel(_):
         [
             InlineKeyboardButton(
                 text=_["S_B_3"],
-                url=f"https://t.me/{app.username}?startgroup=true"
+                url=f"https://t.me/{app.username}?startgroup=true",
+                style=ButtonStyle.PRIMARY,
             )
         ],
         [
             InlineKeyboardButton(
                 text=_["S_B_4"],
-                callback_data="settings_back_helper"
+                callback_data="settings_back_helper",
+                style=ButtonStyle.PRIMARY,
             ),
         ],
         [
             InlineKeyboardButton(
                 text="⌯ ᴏᴡɴᴇʀ ⌯",
-                user_id=config.OWNER_ID
+                user_id=config.OWNER_ID,
+                style=ButtonStyle.SUCCESS,
             ),
             InlineKeyboardButton(
                 text="⌯ ɴᴇᴛᴡᴏʀᴋ ⌯",
-                url="https://t.me/SpIcYxNeTwOrK"
+                url="https://t.me/SpIcYxNeTwOrK",
+                style=ButtonStyle.SUCCESS,
             ),
         ],
     ]
