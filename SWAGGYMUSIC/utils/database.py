@@ -35,6 +35,9 @@ sudoersdb = mongodb.sudoers
 usersdb = mongodb.tgusersdb
 thumbdb = mongodb.thumbdb
 ttsdb = mongodb.tts
+# Welcome system — persistent per-chat enable/disable flag.
+# Default is enabled (True) for any chat that has no record yet.
+welcomedb = mongodb.welcome_toggle
 
 # Shifting to memory [mongo sucks often]
 active = []
@@ -58,6 +61,9 @@ playmode = {}
 playtype = {}
 skipmode = {}
 filters = {}
+# Welcome system in-memory cache — mirrors DB to avoid a Mongo round-trip
+# on every new-member join event (which fires very frequently).
+welcomem = {}
 
 
 async def save_filter(chat_id: int, name: str, _filter: dict):
@@ -839,3 +845,57 @@ async def set_tts_text(text: str):
     await ttsdb.update_one(
         {"chat_id": chat_id}, {"$set": {"text": text}}, upsert=True
     )
+
+
+# ─── Welcome system helpers ─────────────────────────────────────────────────
+# Persistent per-chat enable/disable flag for the welcome message feature.
+# State survives bot/dyno/server restarts because it is backed by MongoDB.
+# An in-memory cache (welcomem) mirrors the DB row to avoid a Mongo
+# round-trip on every ChatMemberUpdated / new_chat_members event.
+
+async def is_welcome_enabled(chat_id: int) -> bool:
+    """Return True if welcome messages are enabled for this chat.
+
+    Default is True for any chat that has no DB record yet, so the
+    welcome feature is opt-out rather than opt-in.
+    """
+    cached = welcomem.get(chat_id)
+    if cached is not None:
+        return cached
+    try:
+        data = await welcomedb.find_one({"chat_id": chat_id})
+        if not data:
+            welcomem[chat_id] = True
+            return True
+        val = bool(data.get("welcome", True))
+        welcomem[chat_id] = val
+        return val
+    except Exception:
+        # If Mongo is unreachable, fail-open (welcome stays enabled)
+        # so a transient DB hiccup doesn't silently disable the feature.
+        return True
+
+
+async def enable_welcome(chat_id: int) -> None:
+    welcomem[chat_id] = True
+    try:
+        await welcomedb.update_one(
+            {"chat_id": chat_id},
+            {"$set": {"welcome": True}},
+            upsert=True,
+        )
+    except Exception:
+        # Cache is already updated — Mongo write will retry on next toggle.
+        pass
+
+
+async def disable_welcome(chat_id: int) -> None:
+    welcomem[chat_id] = False
+    try:
+        await welcomedb.update_one(
+            {"chat_id": chat_id},
+            {"$set": {"welcome": False}},
+            upsert=True,
+        )
+    except Exception:
+        pass
