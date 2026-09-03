@@ -40,6 +40,7 @@ import os
 
 from PIL import Image, ImageDraw, ImageEnhance, ImageFont
 from pyrogram import enums, filters
+from pyrogram.enums import ParseMode
 from pyrogram.types import (
     ChatMemberUpdated,
     InlineKeyboardButton,
@@ -58,6 +59,34 @@ from config import BANNED_USERS
 from strings import get_string
 
 _log = LOGGER(__name__)
+
+# ─── Parse mode rationale ────────────────────────────────────────────────────
+# The target repo's Pyrogram client (core/bot.py) sets a global
+# `parse_mode=ParseMode.HTML`. This means by default Pyrogram will:
+#   - Parse <b>bold</b>, <u>underline</u>, <code>...</code> etc. as HTML
+#   - Send Markdown syntax like **bold** as LITERAL TEXT (no parsing)
+#
+# The welcome caption (welcome_caption in en.yml) contains BOTH:
+#   - Markdown:  **⏤͟͟͞͞★ ʜᴇʟʟᴏ ᴅᴇᴀʀ...**  and  **➻ ɴᴀᴍᴇ »**
+#   - HTML:      <u>**❖ ᴜsᴇʀ sʜᴏʀᴛ ɪɴꜰᴏ**</u>
+#
+# The autoplaysty source repo (Pyrogram 2.0.106, no global parse_mode) lets
+# Pyrogram default to ParseMode.DEFAULT which parses BOTH Markdown and HTML
+# simultaneously. That is why `**bold**` renders as actual bold in the source
+# bot but shows up as literal `**` characters in the target bot.
+#
+# Fix: explicitly pass `parse_mode=ParseMode.DEFAULT` to every welcome
+# message-sending call. DEFAULT mode is "combined Markdown+HTML", which
+# correctly parses BOTH `**bold**` AND `<u>underline</u>` in the same text.
+#
+# We do NOT change the global parse_mode (would break the HTML-only
+# convention used by hundreds of other strings in en.yml like call_10,
+# general_2, tg_1, etc.). The fix is scoped to welcome messages only.
+#
+# A safe fallback is included: if DEFAULT parsing fails on malformed
+# input (e.g. unmatched `**` or invalid HTML), we retry with HTML-only
+# parsing, then as a last resort plain text. This ensures the welcome
+# message is always delivered even if the caption is malformed.
 
 # ─── In-memory store for auto-deleting previous welcome messages ────────────
 # Only tracks message *handles* (not settings) — these are inherently
@@ -166,6 +195,93 @@ def _generate_welcome_image(pic_path, user_id, username):
 # new_chat_members handler share identical behaviour — avoiding drift.
 
 
+async def _safe_send_photo(client, chat_id, photo, caption, reply_markup=None):
+    """Send a photo with combined Markdown+HTML parsing, with safe fallback.
+
+    Tries ParseMode.DEFAULT (combined Markdown+HTML) first — this matches
+    the autoplaysty source repo's default Pyrogram 2.0.106 behavior.
+    If that fails (malformed markup), retries with HTML-only parsing
+    (strips any unmatched `**` markers from the rendered text). If that
+    also fails, retries with DISABLED parse mode (sends raw text).
+    Never raises — returns the Message on success or None on total failure.
+    """
+    attempts = [
+        (ParseMode.DEFAULT, "DEFAULT (Markdown+HTML combined)"),
+        (ParseMode.HTML, "HTML only"),
+        (ParseMode.DISABLED, "DISABLED (plain text)"),
+    ]
+    for mode, label in attempts:
+        try:
+            return await client.send_photo(
+                chat_id=chat_id,
+                photo=photo,
+                caption=caption,
+                parse_mode=mode,
+                reply_markup=reply_markup,
+            )
+        except Exception as e:
+            _log.warning(
+                f"welcome send_photo failed with parse_mode={label}: {e}"
+            )
+            if mode == ParseMode.DISABLED:
+                # Last resort also failed — give up entirely.
+                return None
+    return None
+
+
+async def _safe_reply_text(message, text, reply_markup=None):
+    """Reply with text using combined Markdown+HTML parsing, with fallback.
+
+    Same fallback ladder as _safe_send_photo: DEFAULT → HTML → DISABLED.
+    """
+    attempts = [
+        (ParseMode.DEFAULT, "DEFAULT (Markdown+HTML combined)"),
+        (ParseMode.HTML, "HTML only"),
+        (ParseMode.DISABLED, "DISABLED (plain text)"),
+    ]
+    for mode, label in attempts:
+        try:
+            return await message.reply_text(
+                text=text,
+                parse_mode=mode,
+                reply_markup=reply_markup,
+            )
+        except Exception as e:
+            _log.warning(
+                f"welcome reply_text failed with parse_mode={label}: {e}"
+            )
+            if mode == ParseMode.DISABLED:
+                return None
+    return None
+
+
+async def _safe_edit_text(message, text, reply_markup=None, disable_preview=True):
+    """Edit message text using combined Markdown+HTML parsing, with fallback.
+
+    Same fallback ladder as _safe_send_photo: DEFAULT → HTML → DISABLED.
+    """
+    attempts = [
+        (ParseMode.DEFAULT, "DEFAULT (Markdown+HTML combined)"),
+        (ParseMode.HTML, "HTML only"),
+        (ParseMode.DISABLED, "DISABLED (plain text)"),
+    ]
+    for mode, label in attempts:
+        try:
+            return await message.edit_text(
+                text=text,
+                parse_mode=mode,
+                disable_web_page_preview=disable_preview,
+                reply_markup=reply_markup,
+            )
+        except Exception as e:
+            _log.warning(
+                f"welcome edit_text failed with parse_mode={label}: {e}"
+            )
+            if mode == ParseMode.DISABLED:
+                return None
+    return None
+
+
 async def _send_welcome(client, chat_id, chat_title, user):
     """Generate the welcome image and send the welcome message.
 
@@ -234,8 +350,9 @@ async def _send_welcome(client, chat_id, chat_title, user):
                 f"**➻ ᴜ_ɴᴀᴍᴇ »** {username_display}\n"
             )
 
-        msg = await client.send_photo(
-            chat_id,
+        msg = await _safe_send_photo(
+            client,
+            chat_id=chat_id,
             photo=welcome_img_path,
             caption=caption,
             reply_markup=InlineKeyboardMarkup(
@@ -250,22 +367,36 @@ async def _send_welcome(client, chat_id, chat_title, user):
             ),
         )
 
-        # ── Schedule auto-delete after 3 minutes (180 seconds) ──
-        async def _delete_welcome():
-            await asyncio.sleep(180)
-            try:
-                await msg.delete()
-            except Exception:
-                pass
-            key = f"welcome-{chat_id}"
-            if key in _temp.PREV_MSG:
+        # If all parse_mode fallbacks failed, give up — log the failure
+        # and clear any stale PREV_MSG entry for this chat. There is no
+        # message to schedule for deletion in this case.
+        if msg is None:
+            _log.error(
+                f"welcome: all parse_mode fallbacks failed for chat {chat_id}, user {user.id}"
+            )
+            stale_key = f"welcome-{chat_id}"
+            if stale_key in _temp.PREV_MSG:
                 try:
-                    del _temp.PREV_MSG[key]
+                    del _temp.PREV_MSG[stale_key]
                 except Exception:
                     pass
+        else:
+            # ── Schedule auto-delete after 3 minutes (180 seconds) ──
+            async def _delete_welcome():
+                await asyncio.sleep(180)
+                try:
+                    await msg.delete()
+                except Exception:
+                    pass
+                key = f"welcome-{chat_id}"
+                if key in _temp.PREV_MSG:
+                    try:
+                        del _temp.PREV_MSG[key]
+                    except Exception:
+                        pass
 
-        asyncio.create_task(_delete_welcome())
-        _temp.PREV_MSG[f"welcome-{chat_id}"] = msg
+            asyncio.create_task(_delete_welcome())
+            _temp.PREV_MSG[f"welcome-{chat_id}"] = msg
 
     except Exception as e:
         _log.error(f"welcome failed to send message: {e}")
@@ -333,9 +464,10 @@ async def welcome_cmd(client, message: Message):
             try:
                 language = await _get_chat_lang(chat_id)
                 _ = get_string(language)
-                return await message.reply_text(_["welcome_5"])
+                return await _safe_reply_text(message, _["welcome_5"])
             except Exception:
-                return await message.reply_text(
+                return await _safe_reply_text(
+                    message,
                     "**» ᴏɴʟʏ ᴀᴅᴍɪɴs ᴄᴀɴ ʜᴀɴᴅʟᴇ ᴡᴇʟᴄᴏᴍᴇ sʏsᴛᴇᴍ**"
                 )
 
@@ -367,7 +499,8 @@ async def welcome_cmd(client, message: Message):
     )
 
     try:
-        await message.reply_text(
+        await _safe_reply_text(
+            message,
             _["welcome_1"].format(status, chat.title or "this group"),
             reply_markup=btn,
         )
@@ -424,7 +557,8 @@ async def welcome_toggle(client, query):
         _ = get_string("en")
 
     try:
-        await query.message.edit_text(
+        await _safe_edit_text(
+            query.message,
             _["welcome_4"].format(
                 _[new_status_key],
                 chat_title,
