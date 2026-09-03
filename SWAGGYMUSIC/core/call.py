@@ -121,6 +121,16 @@ class Call(PyTgCalls):
         video: bool,
         ffmpeg: str | None = None,
     ) -> types.MediaStream:
+        # Guard against None/empty source — pytgcalls would otherwise raise a
+        # raw TypeError ("media_path has incorrect type... got 'NoneType'")
+        # which surfaces as a confusing "Telegram server error" to the user.
+        # This happens when YouTube.download() returns (None, False) due to
+        # age-restriction, region-block, or stream-expiry upstream.
+        if not source:
+            raise AssistantErr(
+                "Stream source is empty — the underlying download or "
+                "URL resolver returned no media path."
+            )
         return types.MediaStream(
             media_path=source,
             audio_parameters=types.AudioQuality.HIGH,
@@ -169,12 +179,23 @@ class Call(PyTgCalls):
     @capture_internal_err
     async def pause_stream(self, chat_id: int):
         assistant = await group_assistant(self, chat_id)
-        await assistant.pause(chat_id)
+        try:
+            await assistant.pause(chat_id)
+        except (exceptions.NotInCallError, ConnectionNotFound):
+            # Bot is not in a call (e.g. user hit /pause after the call ended).
+            # Silently no-op — there is nothing to pause.
+            return
 
     @capture_internal_err
     async def resume_stream(self, chat_id: int):
         assistant = await group_assistant(self, chat_id)
-        await assistant.resume(chat_id)
+        try:
+            await assistant.resume(chat_id)
+        except (exceptions.NotInCallError, ConnectionNotFound):
+            # Bot is not in a call (e.g. user hit /resume after the call ended,
+            # or the underlying ntgcalls connection was never established).
+            # Silently no-op — there is nothing to resume.
+            return
 
     @capture_internal_err
     async def stop_stream(self, chat_id: int):
@@ -406,12 +427,21 @@ class Call(PyTgCalls):
         try:
             stream = self._build_stream(link, video=bool(video))
             await self._play_on_assistant(assistant, chat_id, stream)
+        except AssistantErr:
+            # User-facing errors raised by _build_stream (e.g. empty source)
+            # must pass through unchanged — don't re-wrap them as call_10.
+            raise
         except exceptions.NoActiveGroupCall:
             raise AssistantErr(_["call_8"])
         except exceptions.NoAudioSourceFound:
             raise AssistantErr(_["call_11"])
         except (ConnectionNotFound, TelegramServerError):
             raise AssistantErr(_["call_10"])
+        except TypeError:
+            # Defensive: if a None slips past _build_stream's guard somehow,
+            # translate the raw pytgcalls TypeError into a user-friendly
+            # "failed to fetch audio" message instead of "Telegram server error".
+            raise AssistantErr(_["call_11"])
         except Exception:
             raise AssistantErr(_["call_10"])
         await add_active_chat(chat_id)
@@ -574,7 +604,10 @@ class Call(PyTgCalls):
         video = True if str(streamtype) == "video" else False
         if "live_" in queued:
             n, link = await YouTube.video(videoid, True)
-            if n == 0:
+            if n == 0 or not link:
+                # Either the resolver returned 0 results, or it returned a
+                # result but with no playable URL (link is None/empty).
+                # Treat both as a failed switch and notify the user.
                 return await app.send_message(
                     original_chat_id,
                     text=_["call_6"],
@@ -611,6 +644,21 @@ class Call(PyTgCalls):
                     video=video,
                 )
             except Exception:
+                if old_mystic:
+                    try:
+                        return await old_mystic.edit_text(
+                            _["call_6"], disable_web_page_preview=True
+                        )
+                    except:
+                        return await old_mystic.edit_caption(
+                            caption=_["call_6"]
+                        )
+                else:
+                    return await app.send_message(original_chat_id, _["call_6"])
+            if not file_path:
+                # YouTube.download() returned (None, False) — the download
+                # failed silently (age-restriction, region-block, expired
+                # stream, etc.). Don't pass None to _build_stream.
                 if old_mystic:
                     try:
                         return await old_mystic.edit_text(

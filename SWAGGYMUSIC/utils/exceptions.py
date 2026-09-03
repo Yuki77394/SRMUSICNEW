@@ -23,7 +23,7 @@ IGNORED_ERROR_KEYWORDS = [
     "कोई सक्रिय वीडियोचैट नहीं मिला।",
 ]
 
-IGNORED_EXCEPTION_CLASSES = ()
+IGNORED_EXCEPTION_CLASSES = (AssistantErr,)
 
 
 def is_ignored_error(err: Union[Exception, BaseException]) -> bool:
