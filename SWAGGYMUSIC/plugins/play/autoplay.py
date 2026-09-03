@@ -8,6 +8,7 @@
 # All rights reserved.
 
 from pyrogram import filters
+from pyrogram.enums import ButtonStyle
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 import random
@@ -25,16 +26,26 @@ from strings import get_string
 async def autoplay_command(client, message: Message, _):
     if len(message.command) < 2:
         playmode = await is_autoplay_on(message.chat.id)
+        # ── Autoplay confirmation menu ────────────────────────────────────────
+        # The toggle button dynamically shows "ENABLE" (when autoplay is off)
+        # or "DISABLE" (when autoplay is on). Per the project-wide button
+        # color spec, both the ENABLE and DISABLE confirmation buttons are
+        # Blue (PRIMARY), and the CLOSE button is Red (DANGER).
+        # Only `style=` is set here — the button text and callback_data
+        # remain 100% identical to the previous behaviour.
         buttons = [
             [
                 InlineKeyboardButton(
                     text="⌯ єɴʌʙʟє ⌯" if not playmode else "⌯ ᴅɪsʌʙʟє ⌯",
-                    callback_data=f"AUTOPLAYCHANGE"
+                    callback_data=f"AUTOPLAYCHANGE",
+                    style=ButtonStyle.PRIMARY,
                 ),
             ],
             [
                 InlineKeyboardButton(
-                    text="⌯ ᴄʟᴏsє ⌯", callback_data="close"
+                    text="⌯ ᴄʟᴏsє ⌯",
+                    callback_data="close",
+                    style=ButtonStyle.DANGER,
                 ),
             ],
         ]
