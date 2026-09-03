@@ -40,7 +40,7 @@ import os
 
 from PIL import Image, ImageDraw, ImageEnhance, ImageFont
 from pyrogram import enums, filters
-from pyrogram.enums import ParseMode
+from pyrogram.enums import ButtonStyle, ParseMode
 from pyrogram.types import (
     ChatMemberUpdated,
     InlineKeyboardButton,
@@ -489,10 +489,14 @@ async def welcome_cmd(client, message: Message):
         [
             [
                 InlineKeyboardButton(
-                    "ᴇɴᴀʙʟᴇ", callback_data=f"wlc_on_{chat_id}"
+                    "ᴇɴᴀʙʟᴇ",
+                    callback_data=f"wlc_on_{chat_id}",
+                    style=ButtonStyle.PRIMARY,
                 ),
                 InlineKeyboardButton(
-                    "ᴅɪsᴀʙʟᴇ", callback_data=f"wlc_off_{chat_id}"
+                    "ᴅɪsᴀʙʟᴇ",
+                    callback_data=f"wlc_off_{chat_id}",
+                    style=ButtonStyle.SUCCESS,
                 ),
             ]
         ]
