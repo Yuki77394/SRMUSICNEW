@@ -8,6 +8,7 @@
 # All rights reserved.
 
 from py_yt import VideosSearch
+from pyrogram.enums import ButtonStyle
 from pyrogram.types import (InlineKeyboardButton, InlineKeyboardMarkup,
                             InlineQueryResultPhoto)
 
@@ -44,6 +45,7 @@ async def inline_query_handler(client, query):
                         InlineKeyboardButton(
                             text="⌯ ʏᴏᴜᴛᴜʙє 🎄 ⌯",
                             url=link,
+                            style=ButtonStyle.SUCCESS,
                         )
                     ],
                 ]

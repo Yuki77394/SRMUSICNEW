@@ -67,11 +67,13 @@ async def gib_repo_callback(_, callback_query):
                 [
                     InlineKeyboardButton(
                         text="⌯ ғᴏʀᴋ ʀᴇᴘᴏ ⌯",
-                        url="https://t.me/hot_dpz_stor"
+                        url="https://t.me/hot_dpz_stor",
+                        style=ButtonStyle.PRIMARY,
                     ),
                     InlineKeyboardButton(
                         text="⌯ 💌 ʏᴛ-ʌᴘɪ ⌯",
                         callback_data="bot_info_data",
+                        style=ButtonStyle.SUCCESS,
                     ),
                 ],
                 [
@@ -147,7 +149,8 @@ async def support(client, CallbackQuery, _):
                 [
                     InlineKeyboardButton(
                         text="⌯ ᴏᴡɴᴇʀ ⌯",
-                        user_id=config.OWNER_ID
+                        user_id=config.OWNER_ID,
+                        style=ButtonStyle.SUCCESS,
                     )
                 ],
                 [

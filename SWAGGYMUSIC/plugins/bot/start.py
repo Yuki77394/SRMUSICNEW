@@ -12,7 +12,7 @@ import time
 
 from py_yt import VideosSearch
 from pyrogram import filters
-from pyrogram.enums import ChatMemberStatus, ChatType
+from pyrogram.enums import ButtonStyle, ChatMemberStatus, ChatType
 from pyrogram.errors import (ChatAdminRequired, InviteRequestSent,
                              UserAlreadyParticipant)
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
@@ -90,8 +90,16 @@ async def start_pm(client, message: Message, _):
             key = InlineKeyboardMarkup(
                 [
                     [
-                        InlineKeyboardButton(text=_["S_B_8"], url=link),
-                        InlineKeyboardButton(text=_["S_B_9"], url=config.SUPPORT_CHAT),
+                        InlineKeyboardButton(
+                            text=_["S_B_8"],
+                            url=link,
+                            style=ButtonStyle.SUCCESS,
+                        ),
+                        InlineKeyboardButton(
+                            text=_["S_B_9"],
+                            url=config.SUPPORT_CHAT,
+                            style=ButtonStyle.SUCCESS,
+                        ),
                     ],
                 ]
             )

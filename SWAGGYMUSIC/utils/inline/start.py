@@ -19,11 +19,13 @@ def start_panel(_):
         [
             InlineKeyboardButton(
                 text=_["S_B_1"],
-                url=f"https://t.me/{app.username}?startgroup=true"
+                url=f"https://t.me/{app.username}?startgroup=true",
+                style=ButtonStyle.PRIMARY,
             ),
             InlineKeyboardButton(
                 text=_["S_B_2"],
-                url=config.SUPPORT_CHAT
+                url=config.SUPPORT_CHAT,
+                style=ButtonStyle.SUCCESS,
             ),
         ],
     ]

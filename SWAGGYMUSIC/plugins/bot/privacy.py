@@ -8,6 +8,7 @@
 # All rights reserved.
 
 from pyrogram import filters
+from pyrogram.enums import ButtonStyle
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from SWAGGYMUSIC import app
@@ -22,6 +23,7 @@ async def privacy_policy(client, message: Message, _):
             InlineKeyboardButton(
                 text=_["PRIVACY_BUTTON"],
                 url=config.PRIVACY_LINK,
+                style=ButtonStyle.PRIMARY,
             ),
         ],
     ]

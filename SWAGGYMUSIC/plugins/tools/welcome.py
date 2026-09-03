@@ -361,6 +361,7 @@ async def _send_welcome(client, chat_id, chat_title, user):
                         InlineKeyboardButton(
                             "ᴀᴅᴅ ᴍᴇ ɪɴ ʏᴏᴜʀ ɢʀᴏᴜᴘ",
                             url=f"https://t.me/{client.username}?startgroup=true",
+                            style=ButtonStyle.PRIMARY,
                         )
                     ]
                 ]
