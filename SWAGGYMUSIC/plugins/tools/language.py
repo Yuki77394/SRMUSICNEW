@@ -8,6 +8,7 @@
 # All rights reserved.
 
 from pyrogram import filters
+from pyrogram.enums import ButtonStyle
 from pyrogram.types import (CallbackQuery, InlineKeyboardButton,
                             InlineKeyboardMarkup, Message)
 
@@ -23,6 +24,7 @@ def languages_keyboard(_):
         InlineKeyboardButton(
             text=languages_present[i],
             callback_data=f"languages:{i}",
+            style=ButtonStyle.PRIMARY,
         )
         for i in languages_present
     ]
@@ -34,10 +36,12 @@ def languages_keyboard(_):
                 InlineKeyboardButton(
                     text=_["BACK_BUTTON"],
                     callback_data="settingsback_helper",
+                    style=ButtonStyle.PRIMARY,
                 ),
                 InlineKeyboardButton(
                     text=_["CLOSE_BUTTON"],
                     callback_data="close",
+                    style=ButtonStyle.DANGER,
                 ),
             ]
         ]

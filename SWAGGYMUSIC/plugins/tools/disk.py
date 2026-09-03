@@ -15,6 +15,7 @@ from typing import Dict, Tuple
 
 from humanize import naturalsize
 from pyrogram import filters
+from pyrogram.enums import ButtonStyle
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from SWAGGYMUSIC import app
@@ -142,7 +143,9 @@ async def show_storage(_, message: Message):
     for folder in CLEANABLE_FOLDERS:
         row.append(
             InlineKeyboardButton(
-                f"🧹 {folder.capitalize()}", callback_data=f"clean_{folder}"
+                f"🧹 {folder.capitalize()}",
+                callback_data=f"clean_{folder}",
+                style=ButtonStyle.DANGER,
             )
         )
         if len(row) == 2:
@@ -151,7 +154,11 @@ async def show_storage(_, message: Message):
     if row:
         buttons.append(row)
 
-    buttons.append([InlineKeyboardButton("🚀 Clean All", callback_data="clean_all")])
+    buttons.append([InlineKeyboardButton(
+        "🚀 Clean All",
+        callback_data="clean_all",
+        style=ButtonStyle.DANGER,
+    )])
 
     await message.reply_text(
         msg, reply_markup=InlineKeyboardMarkup(buttons), disable_web_page_preview=True

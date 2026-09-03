@@ -7,7 +7,7 @@
 #
 # All rights reserved.
 
-from pyrogram.enums import ChatType
+from pyrogram.enums import ButtonStyle, ChatType
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from SWAGGYMUSIC import app
@@ -48,6 +48,7 @@ def AdminRightsCheck(mystic):
                         InlineKeyboardButton(
                             text="⌯ ʜᴏᴡ ᴛᴏ ғɪx ? ⌯",
                             callback_data="AnonymousAdmin",
+                            style=ButtonStyle.PRIMARY,
                         ),
                     ]
                 ]
@@ -93,6 +94,7 @@ def AdminRightsCheck(mystic):
                                         InlineKeyboardButton(
                                             text="⌯ ᴠᴏᴛє ⌯",
                                             callback_data=f"ADMIN  UpVote|{chat_id}_{MODE}",
+                                            style=ButtonStyle.SUCCESS,
                                         ),
                                     ]
                                 ]
@@ -146,6 +148,7 @@ def AdminActual(mystic):
                         InlineKeyboardButton(
                             text="⌯ ʜᴏᴡ ᴛᴏ ғɪx ? ⌯",
                             callback_data="AnonymousAdmin",
+                            style=ButtonStyle.PRIMARY,
                         ),
                     ]
                 ]

@@ -12,6 +12,7 @@ import os
 import time
 from typing import Union
 
+from pyrogram.enums import ButtonStyle
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Voice
 
 import config
@@ -117,6 +118,7 @@ class TeleAPI:
                             InlineKeyboardButton(
                                 text="⌯ ᴄʌɴᴄєʟ ⌯",
                                 callback_data="stop_downloading",
+                                style=ButtonStyle.DANGER,
                             ),
                         ]
                     ]

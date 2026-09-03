@@ -9,7 +9,7 @@
 
 import asyncio
 
-from pyrogram.enums import ChatMemberStatus
+from pyrogram.enums import ButtonStyle, ChatMemberStatus
 from pyrogram.errors import (ChatAdminRequired, InviteRequestSent,
                              UserAlreadyParticipant, UserNotParticipant)
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
@@ -37,6 +37,7 @@ def PlayWrapper(command):
                         InlineKeyboardButton(
                             text="⌯ ʜᴏᴡ ᴛᴏ ғɪx ? ⌯",
                             callback_data="AnonymousAdmin",
+                            style=ButtonStyle.PRIMARY,
                         ),
                     ]
                 ]

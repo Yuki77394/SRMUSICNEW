@@ -15,6 +15,7 @@ from typing import Union
 
 from ntgcalls import ConnectionNotFound, TelegramServerError
 from pyrogram import Client
+from pyrogram.enums import ButtonStyle
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from pytgcalls import PyTgCalls, exceptions, types
 from pytgcalls.pytgcalls_session import PyTgCallsSession
@@ -518,11 +519,14 @@ class Call(PyTgCalls):
                                         InlineKeyboardButton(
                                             "✙ ʌᴅᴅ ϻє вᴧʙʏ ✙",
                                             url=f"https://t.me/{app.username}?startgroup=true",
+                                            style=ButtonStyle.PRIMARY,
                                         ),
                                     ],
                                     [
                                         InlineKeyboardButton(
-                                            "⋞ ᴄʟᴏsє ⋟", callback_data="close_message"
+                                            "⋞ ᴄʟᴏsє ⋟",
+                                            callback_data="close_message",
+                                            style=ButtonStyle.DANGER,
                                         ),
                                     ]
                                 ]
@@ -545,11 +549,14 @@ class Call(PyTgCalls):
                                 InlineKeyboardButton(
                                     "✙ ʌᴅᴅ ϻє вᴧʙʏ ✙",
                                     url=f"https://t.me/{app.username}?startgroup=true",
+                                    style=ButtonStyle.PRIMARY,
                                 ),
                             ],
                             [
                                 InlineKeyboardButton(
-                                    "⋞ ᴄʟᴏsє ⋟", callback_data="close_message"
+                                    "⋞ ᴄʟᴏsє ⋟",
+                                    callback_data="close_message",
+                                    style=ButtonStyle.DANGER,
                                 ),
                             ]
                         ]

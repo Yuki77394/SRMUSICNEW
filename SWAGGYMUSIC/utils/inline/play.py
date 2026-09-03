@@ -23,20 +23,24 @@ def track_markup(_, videoid, user_id, channel, fplay, thumb: Union[bool, str] = 
             InlineKeyboardButton(
                 text="🎵",
                 callback_data=f"MusicStream {videoid}|{user_id}|a|{channel}|{fplay}",
+                style=ButtonStyle.PRIMARY,
             ),
             InlineKeyboardButton(
                 text="🎥",
                 callback_data=f"MusicStream {videoid}|{user_id}|v|{channel}|{fplay}",
+                style=ButtonStyle.PRIMARY,
             ),
         ],
         [
             InlineKeyboardButton(
                 text="⎘",
                 callback_data=f"MusicThumb {videoid}|{user_id}|{channel}|{fplay}",
+                style=ButtonStyle.SUCCESS,
             ),
             InlineKeyboardButton(
                 text="⌯✖",
                 callback_data=f"forceclose {videoid}|{user_id}",
+                style=ButtonStyle.DANGER,
             ),
         ],
     ]
@@ -323,6 +327,7 @@ def playlist_markup(
                     f"AlonePlaylists "
                     f"{videoid}|{user_id}|{ptype}|a|{channel}|{fplay}"
                 ),
+                style=ButtonStyle.PRIMARY,
             ),
             InlineKeyboardButton(
                 text="🎥",
@@ -330,6 +335,7 @@ def playlist_markup(
                     f"AlonePlaylists "
                     f"{videoid}|{user_id}|{ptype}|v|{channel}|{fplay}"
                 ),
+                style=ButtonStyle.PRIMARY,
             ),
         ],
         [
@@ -339,10 +345,12 @@ def playlist_markup(
                     f"PlaylistThumb "
                     f"{videoid}|{user_id}|{ptype}|{channel}|{fplay}"
                 ),
+                style=ButtonStyle.SUCCESS,
             ),
             InlineKeyboardButton(
                 text="✖",
                 callback_data=f"forceclose {videoid}|{user_id}",
+                style=ButtonStyle.DANGER,
             ),
         ],
     ]
@@ -367,6 +375,7 @@ def livestream_markup(
                     f"LiveStream "
                     f"{videoid}|{user_id}|{mode}|{channel}|{fplay}"
                 ),
+                style=ButtonStyle.PRIMARY,
             ),
         ],
         [
@@ -376,10 +385,12 @@ def livestream_markup(
                     f"LiveThumb "
                     f"{videoid}|{user_id}|{mode}|{channel}|{fplay}"
                 ),
+                style=ButtonStyle.SUCCESS,
             ),
             InlineKeyboardButton(
                 text="✖",
                 callback_data=f"forceclose {videoid}|{user_id}",
+                style=ButtonStyle.DANGER,
             ),
         ],
     ]
@@ -407,6 +418,7 @@ def slider_markup(
                     f"MusicStream "
                     f"{videoid}|{user_id}|a|{channel}|{fplay}"
                 ),
+                style=ButtonStyle.PRIMARY,
             ),
             InlineKeyboardButton(
                 text="🎥",
@@ -414,6 +426,7 @@ def slider_markup(
                     f"MusicStream "
                     f"{videoid}|{user_id}|v|{channel}|{fplay}"
                 ),
+                style=ButtonStyle.PRIMARY,
             ),
         ],
         [
@@ -423,6 +436,7 @@ def slider_markup(
                     f"slider B|{query_type}|{query}|"
                     f"{user_id}|{channel}|{fplay}"
                 ),
+                style=ButtonStyle.SUCCESS,
             ),
             InlineKeyboardButton(
                 text="⎘",
@@ -431,6 +445,7 @@ def slider_markup(
                     f"{videoid}|{user_id}|{query}|{query_type}|"
                     f"{channel}|{fplay}"
                 ),
+                style=ButtonStyle.SUCCESS,
             ),
             InlineKeyboardButton(
                 text="▷",
@@ -438,12 +453,14 @@ def slider_markup(
                     f"slider F|{query_type}|{query}|"
                     f"{user_id}|{channel}|{fplay}"
                 ),
+                style=ButtonStyle.SUCCESS,
             ),
         ],
         [
             InlineKeyboardButton(
                 text="✖",
                 callback_data=f"forceclose {query}|{user_id}",
+                style=ButtonStyle.DANGER,
             ),
         ],
     ]

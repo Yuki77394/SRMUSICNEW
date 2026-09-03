@@ -17,6 +17,7 @@ from io import StringIO
 from time import time
 
 from pyrogram import filters
+from pyrogram.enums import ButtonStyle
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from SWAGGYMUSIC import app
@@ -115,6 +116,7 @@ async def executor(client: app, message: Message):
                     InlineKeyboardButton(
                         text="🗑",
                         callback_data=f"forceclose abc|{message.from_user.id}",
+                        style=ButtonStyle.DANGER,
                     ),
                 ]
             ]

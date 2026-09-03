@@ -9,7 +9,7 @@
 from time import time
 
 from pyrogram import filters
-from pyrogram.enums import ChatType
+from pyrogram.enums import ButtonStyle, ChatType
 from pyrogram.errors import MessageNotModified
 from pyrogram.types import (CallbackQuery, InlineKeyboardButton,InputMediaVideo,
                             InlineKeyboardMarkup, Message)
@@ -69,16 +69,21 @@ async def gib_repo_callback(_, callback_query):
                         text="⌯ ғᴏʀᴋ ʀᴇᴘᴏ ⌯",
                         url="https://t.me/hot_dpz_stor"
                     ),
-                    InlineKeyboardButton(text="⌯ 💌 ʏᴛ-ʌᴘɪ ⌯", callback_data="bot_info_data"),
+                    InlineKeyboardButton(
+                        text="⌯ 💌 ʏᴛ-ʌᴘɪ ⌯",
+                        callback_data="bot_info_data",
+                    ),
                 ],
                 [
                     InlineKeyboardButton(
                         text="• ʙᴀᴄᴋ •",
-                        callback_data="settingsback_helper"
+                        callback_data="settingsback_helper",
+                        style=ButtonStyle.PRIMARY,
                     ),
                     InlineKeyboardButton(
                         text="• ᴄʟᴏsᴇ •",
-                        callback_data="close"
+                        callback_data="close",
+                        style=ButtonStyle.DANGER,
                     )
                 ]
             ]
@@ -148,7 +153,8 @@ async def support(client, CallbackQuery, _):
                 [
                     InlineKeyboardButton(
                         text="⌯ ʙᴀᴄᴋ ⌯",
-                        callback_data="settingsback_helper"
+                        callback_data="settingsback_helper",
+                        style=ButtonStyle.PRIMARY,
                     )
                 ],
             ]
@@ -428,10 +434,15 @@ async def authusers_mar(client, CallbackQuery, _):
             upl = InlineKeyboardMarkup(
                 [
                     [
-                        InlineKeyboardButton(text=_["BACK_BUTTON"], callback_data="AU"),
+                        InlineKeyboardButton(
+                            text=_["BACK_BUTTON"],
+                            callback_data="AU",
+                            style=ButtonStyle.PRIMARY,
+                        ),
                         InlineKeyboardButton(
                             text=_["CLOSE_BUTTON"],
                             callback_data="close",
+                            style=ButtonStyle.DANGER,
                         ),
                     ]
                 ]

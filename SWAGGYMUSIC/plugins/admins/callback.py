@@ -10,6 +10,7 @@
 import asyncio
 
 from pyrogram import filters
+from pyrogram.enums import ButtonStyle
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 
 import config
@@ -110,6 +111,7 @@ async def del_back_playlist(client, CallbackQuery, _):
                         InlineKeyboardButton(
                             text=f"👍 {get_upvotes}",
                             callback_data=f"ADMIN  UpVote|{chat_id}_{counter}",
+                            style=ButtonStyle.SUCCESS,
                         )
                     ]
                 ]
