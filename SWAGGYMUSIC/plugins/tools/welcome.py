@@ -36,7 +36,9 @@ Persistence model:
 """
 
 import asyncio
+import html
 import os
+import re
 
 from PIL import Image, ImageDraw, ImageEnhance, ImageFont
 from pyrogram import enums, filters
@@ -92,6 +94,139 @@ _log = LOGGER(__name__)
 # Only tracks message *handles* (not settings) — these are inherently
 # ephemeral and would not survive a bot restart anyway, so a dict is fine.
 # Persistent state lives in MongoDB via the helpers above.
+
+
+# ─── Input sanitization helpers ─────────────────────────────────────────────
+# These functions strip characters from user-controlled inputs that, when
+# interpolated into the welcome caption, can break Telegram's entity parsing
+# or produce visually-wrong output.
+#
+# The welcome caption (welcome_caption in en.yml) is a MIXED Markdown+HTML
+# template. The {0} placeholder is the chat title, {1} is the user mention,
+# {3} is the username display. If any of these contain Markdown metacharacters
+# (e.g. a group named "Music *Channel* Logger" or a user named "John <Doe>"),
+# they can:
+#   - Break the `**bold**` pairing in Markdown (causing Telegram to reject
+#     the entities with "ENTITIES_TOO_LONG" or similar)
+#   - Break the <u>...</u> HTML nesting (causing "BAD_REQUEST: can't parse
+#     entities")
+#   - Cause the entire send_photo request to fail — and since the failure is
+#     at the Telegram API level (not pyroblack's parser), all 3 parse_mode
+#     fallbacks (DEFAULT → HTML → DISABLED) will fail too, because the
+#     photo upload itself is what's being rejected, not the parsing.
+#
+# Sanitization strategy:
+#   - _sanitize_text(): strip ALL Markdown + HTML metacharacters. Used for
+#     plain-text fallback paths and for building a guaranteed-safe mention.
+#   - _build_safe_mention(): produce a clean text label that won't break
+#     parsing. Falls back to user ID if first name is empty/whitespace.
+#   - _build_safe_chat_title(): same for chat title.
+#   - _build_safe_username(): same for username display.
+
+# Regex that matches all Markdown/HTML metacharacters we want to strip
+# from user-supplied text before interpolation into the welcome caption.
+# We keep only: letters, numbers, spaces, basic punctuation, and emojis
+# (which are multi-byte and don't match the simple ASCII patterns).
+_MARKDOWN_HTML_METACHARS_RE = re.compile(r"[*_~`<>\[\](){}|\\#+\-!]+")
+
+# Pattern for stripping ONLY the most dangerous characters (the ones that
+# actually break HTML parsing): < > &
+_HTML_DANGEROUS_RE = re.compile(r"[<>&]")
+
+
+def _sanitize_text(text, max_len: int = 100) -> str:
+    """Strip Markdown and HTML metacharacters from user-controlled text.
+
+    Returns a safe plain-text string suitable for interpolating into any
+    caption template, regardless of which parse_mode the caption uses.
+
+    - Removes: * _ ~ ` < > [ ] ( ) { } | \\ # + - !
+    - Truncates to max_len characters
+    - Returns a fallback if the result is empty/whitespace
+    """
+    if not text:
+        return ""
+    try:
+        # First strip the metacharacters
+        cleaned = _MARKDOWN_HTML_METACHAR_CHARS(text)
+        # Collapse multiple spaces
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        # Truncate
+        if len(cleaned) > max_len:
+            cleaned = cleaned[:max_len - 1] + "…"
+        return cleaned
+    except Exception:
+        return str(text)[:max_len] if text else ""
+
+
+def _MARKDOWN_HTML_METACHAR_CHARS(text):
+    """Inner regex substitution (kept as a separate name for clarity)."""
+    return _MARKDOWN_HTML_METACHARS_RE.sub("", str(text))
+
+
+def _build_safe_chat_title(chat_title) -> str:
+    """Return a sanitized chat title, or a fallback if empty."""
+    if not chat_title:
+        return "this group"
+    cleaned = _sanitize_text(chat_title, max_len=80)
+    return cleaned if cleaned else "this group"
+
+
+def _build_safe_first_name(first_name) -> str:
+    """Return a sanitized first name, or a fallback if empty."""
+    if not first_name:
+        return "User"
+    cleaned = _sanitize_text(first_name, max_len=50)
+    return cleaned if cleaned else "User"
+
+
+def _build_safe_username(username) -> str:
+    """Return a sanitized @username, or 'No Username' if empty."""
+    if not username:
+        return "No Username"
+    # Strip @ and any non-alphanumeric chars from username
+    cleaned = re.sub(r"[^a-zA-Z0-9_]", "", str(username).lstrip("@"))
+    return f"@{cleaned}" if cleaned else "No Username"
+
+
+def _build_safe_mention_text(user) -> str:
+    """Build a SAFE mention string for the caption.
+
+    We do NOT use user.mention here because that returns an HTML <a> tag
+    that gets interpolated inside the `**bold**` Markdown section of the
+    welcome caption — and if the chat title or first name contains HTML
+    metacharacters, the resulting caption can be rejected by Telegram.
+
+    Instead, we build a plain text label like "John (12345)" that is
+    safe in any parse_mode. The mention link is omitted — users can
+    still click on the user's profile photo / reply to see the profile.
+    """
+    first = _build_safe_first_name(getattr(user, "first_name", None) or "")
+    uid = getattr(user, "id", 0) or 0
+    if first and first != "User":
+        return f"{first} [{uid}]"
+    return f"User [{uid}]"
+
+
+def _build_plain_caption(chat_title, user, username_display) -> str:
+    """Build a guaranteed-safe plain-text caption (no Markdown, no HTML).
+
+    This is the LAST-RESORT caption used when all parse_mode attempts fail.
+    It contains only plain text + the InlineKeyboardButton (which is sent
+    via reply_markup, separately from the caption).
+    """
+    safe_title = _build_safe_chat_title(chat_title)
+    safe_name = _build_safe_first_name(getattr(user, "first_name", None))
+    uid = getattr(user, "id", 0) or 0
+    safe_uname = _build_safe_username(getattr(user, "username", None))
+    return (
+        f"Hello! Welcome to: {safe_title}\n\n"
+        f"User Info:\n"
+        f"Name: {safe_name}\n"
+        f"User ID: {uid}\n"
+        f"Username: {safe_uname}\n\n"
+        f"Thanks for joining us!"
+    )
 
 
 class _WelcomeTemp:
@@ -195,7 +330,7 @@ def _generate_welcome_image(pic_path, user_id, username):
 # new_chat_members handler share identical behaviour — avoiding drift.
 
 
-async def _safe_send_photo(client, chat_id, photo, caption, reply_markup=None):
+async def _safe_send_photo(client, chat_id, photo, caption, reply_markup=None, plain_text_caption=None):
     """Send a photo with combined Markdown+HTML parsing, with safe fallback.
 
     Tries ParseMode.DEFAULT (combined Markdown+HTML) first — this matches
@@ -203,13 +338,43 @@ async def _safe_send_photo(client, chat_id, photo, caption, reply_markup=None):
     If that fails (malformed markup), retries with HTML-only parsing
     (strips any unmatched `**` markers from the rendered text). If that
     also fails, retries with DISABLED parse mode (sends raw text).
+    If DISABLED also fails (which means the issue is NOT parsing but
+    something else — photo upload, chat permissions, etc.), retries as
+    a plain text message via send_message (no photo) using the
+    plain_text_caption argument.
+
     Never raises — returns the Message on success or None on total failure.
     """
+    # If the photo path is invalid, skip directly to the text-only fallback.
+    # This avoids 3 wasted send_photo attempts that are guaranteed to fail
+    # with the same file-not-found error.
+    if not photo or not os.path.isfile(str(photo)):
+        _log.warning(
+            f"welcome _safe_send_photo: photo path invalid or missing: {photo!r} "
+            f"— falling back to plain-text send_message"
+        )
+        if plain_text_caption:
+            try:
+                return await client.send_message(
+                    chat_id=chat_id,
+                    text=plain_text_caption,
+                    parse_mode=ParseMode.DISABLED,
+                    reply_markup=reply_markup,
+                )
+            except Exception as e:
+                _log.error(
+                    f"welcome _safe_send_photo: even plain-text fallback failed: "
+                    f"{type(e).__name__}: {e}"
+                )
+                return None
+        return None
+
     attempts = [
         (ParseMode.DEFAULT, "DEFAULT (Markdown+HTML combined)"),
         (ParseMode.HTML, "HTML only"),
         (ParseMode.DISABLED, "DISABLED (plain text)"),
     ]
+    last_error = None
     for mode, label in attempts:
         try:
             return await client.send_photo(
@@ -220,12 +385,35 @@ async def _safe_send_photo(client, chat_id, photo, caption, reply_markup=None):
                 reply_markup=reply_markup,
             )
         except Exception as e:
+            last_error = e
             _log.warning(
-                f"welcome send_photo failed with parse_mode={label}: {e}"
+                f"welcome send_photo failed with parse_mode={label}: "
+                f"{type(e).__name__}: {e}"
             )
-            if mode == ParseMode.DISABLED:
-                # Last resort also failed — give up entirely.
-                return None
+
+    # All 3 parse_mode attempts failed — this means the issue is NOT parsing
+    # but something else (photo content invalid, chat permissions, etc.).
+    # Fall back to a plain-text message (no photo) which is much simpler and
+    # has a much higher chance of succeeding.
+    if plain_text_caption:
+        err_type = type(last_error).__name__ if last_error else "unknown"
+        _log.warning(
+            f"welcome: all photo send attempts failed ({err_type}); "
+            f"falling back to plain text message"
+        )
+        try:
+            return await client.send_message(
+                chat_id=chat_id,
+                text=plain_text_caption,
+                parse_mode=ParseMode.DISABLED,
+                reply_markup=reply_markup,
+            )
+        except Exception as e:
+            _log.error(
+                f"welcome: even plain-text send_message fallback failed: "
+                f"{type(e).__name__}: {e}"
+            )
+
     return None
 
 
@@ -325,55 +513,103 @@ async def _send_welcome(client, chat_id, chat_title, user):
 
     # ── Send welcome message ──
     try:
-        username_display = f"@{user.username}" if user.username else "No Username"
-        try:
-            mention = user.mention
-        except Exception:
-            # user.mention can fail in some edge cases; build a manual mention
-            mention = f"<a href='tg://user?id={user.id}'>{user.first_name or 'User'}</a>"
+        # Sanitize ALL user-controlled inputs BEFORE interpolating into the
+        # caption template. This prevents Markdown/HTML metacharacters in
+        # the chat title, first name, or username from breaking the caption
+        # parsing or being rejected by Telegram.
+        safe_chat_title = _build_safe_chat_title(chat_title)
+        safe_first_name = _build_safe_first_name(getattr(user, "first_name", None))
+        safe_username_display = _build_safe_username(getattr(user, "username", None))
 
+        # Build the mention as a SAFE plain-text label (e.g. "John [12345]")
+        # instead of an HTML <a> tag. The HTML mention from user.mention
+        # gets interpolated inside the `**bold**` Markdown section of the
+        # caption, which can confuse Telegram's combined Markdown+HTML
+        # parser and cause "can't parse entities" errors.
+        safe_mention_text = _build_safe_mention_text(user)
+
+        # Primary caption — uses the language-specific welcome_caption
+        # template, but with SANITIZED inputs so it can never break.
         try:
             language = await _get_chat_lang(chat_id)
             _ = get_string(language)
             caption = _["welcome_caption"].format(
-                chat_title or "this group",
-                mention,
+                safe_chat_title,
+                safe_mention_text,
                 user.id,
-                username_display,
+                safe_username_display,
             )
         except Exception:
             # If language lookup fails, fall back to a minimal hardcoded caption
             caption = (
-                f"**⏤͟͟͞͞★ ʜᴇʟʟᴏ ᴅᴇᴀʀ ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ : {chat_title or 'this group'}**\n\n"
-                f"**➻ ɴᴀᴍᴇ »** {mention}\n"
+                f"**⏤͟͟͞͞★ ʜᴇʟʟᴏ ᴅᴇᴀʀ ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ : {safe_chat_title}**\n\n"
+                f"**➻ ɴᴀᴍᴇ »** {safe_mention_text}\n"
                 f"**➻ ᴜsᴇʀ_ɪᴅ »** `{user.id}`\n"
-                f"**➻ ᴜ_ɴᴀᴍᴇ »** {username_display}\n"
+                f"**➻ ᴜ_ɴᴀᴍᴇ »** {safe_username_display}\n"
             )
 
-        msg = await _safe_send_photo(
-            client,
-            chat_id=chat_id,
-            photo=welcome_img_path,
-            caption=caption,
-            reply_markup=InlineKeyboardMarkup(
-                [
-                    [
-                        InlineKeyboardButton(
-                            "ᴀᴅᴅ ᴍᴇ ɪɴ ʏᴏᴜʀ ɢʀᴏᴜᴘ",
-                            url=f"https://t.me/{client.username}?startgroup=true",
-                            style=ButtonStyle.PRIMARY,
-                        )
-                    ]
-                ]
-            ),
-        )
+        # Plain-text fallback caption — used only if all parse_mode attempts
+        # on the photo fail. Guaranteed to contain no Markdown/HTML, so it
+        # can always be sent with parse_mode=DISABLED.
+        plain_text_caption = _build_plain_caption(chat_title, user, safe_username_display)
 
-        # If all parse_mode fallbacks failed, give up — log the failure
-        # and clear any stale PREV_MSG entry for this chat. There is no
-        # message to schedule for deletion in this case.
+        # Validate the photo path before attempting to send. If the welcome
+        # image generation silently produced an empty/missing file, skip the
+        # 3 parse_mode attempts and go straight to the plain-text fallback.
+        if not welcome_img_path or not os.path.isfile(str(welcome_img_path)):
+            _log.warning(
+                f"welcome: image path missing or not a file: {welcome_img_path!r}; "
+                f"sending plain-text welcome instead"
+            )
+            try:
+                msg = await client.send_message(
+                    chat_id=chat_id,
+                    text=plain_text_caption,
+                    parse_mode=ParseMode.DISABLED,
+                    reply_markup=InlineKeyboardMarkup(
+                        [
+                            [
+                                InlineKeyboardButton(
+                                    "ᴀᴅᴅ ᴍᴇ ɪɴ ʏᴏᴜʀ ɢʀᴏᴜᴘ",
+                                    url=f"https://t.me/{client.username}?startgroup=true",
+                                    style=ButtonStyle.PRIMARY,
+                                )
+                            ]
+                        ]
+                    ),
+                )
+            except Exception as e:
+                _log.error(
+                    f"welcome: plain-text fallback send_message failed: "
+                    f"{type(e).__name__}: {e}"
+                )
+                msg = None
+        else:
+            msg = await _safe_send_photo(
+                client,
+                chat_id=chat_id,
+                photo=welcome_img_path,
+                caption=caption,
+                reply_markup=InlineKeyboardMarkup(
+                    [
+                        [
+                            InlineKeyboardButton(
+                                "ᴀᴅᴅ ᴍᴇ ɪɴ ʏᴏᴜʀ ɢʀᴏᴜᴘ",
+                                url=f"https://t.me/{client.username}?startgroup=true",
+                                style=ButtonStyle.PRIMARY,
+                            )
+                        ]
+                    ]
+                ),
+                plain_text_caption=plain_text_caption,
+            )
+
+        # If even the plain-text fallback failed, give up — log the failure
+        # and clear any stale PREV_MSG entry for this chat.
         if msg is None:
             _log.error(
-                f"welcome: all parse_mode fallbacks failed for chat {chat_id}, user {user.id}"
+                f"welcome: ALL fallbacks failed for chat {chat_id}, user {user.id} "
+                f"(including plain-text) — welcome message not delivered"
             )
             stale_key = f"welcome-{chat_id}"
             if stale_key in _temp.PREV_MSG:
