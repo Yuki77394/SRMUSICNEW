@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2021-2022 by TheAloneteam@Github, < https://github.com/TheAloneTeam >.
+# Copyright (C) 2021-2022 by Yuki77394@Github, < https://github.com/Yuki77394 >.
 #
 # This file is part of < https://github.com/TheAloneTeam/SWAGGYMUSIC > project,
 # and is released under the "GNU v3.0 License Agreement".
