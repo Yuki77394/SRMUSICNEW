@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2021-2026 by Yuki77394@Github, < https://github.com/Yuki77394 >.
+# Copyright (C) 2021-2022 by TheAloneteam@Github, < https://github.com/TheAloneTeam >.
 #
 # This file is part of < https://github.com/TheAloneTeam/SWAGGYMUSIC > project,
 # and is released under the "GNU v3.0 License Agreement".
@@ -7,134 +7,131 @@
 #
 # All rights reserved.
 
-import asyncio
+# IMPORTANT: This file is for INLINE KEYBOARD MARKUP functions only.
+# It is NOT the stream queue management module (that lives at
+# SWAGGYMUSIC/utils/stream/queue.py and contains put_queue / put_queue_index).
+#
+# This module provides the inline keyboard layouts used by the queue UI:
+#   - queue_markup        : "Now Playing" footer buttons (Queue + Close,
+#                           or Timer + Queue + Close when duration is known)
+#   - queue_back_markup   : Back + Close row shown after clicking GetTimer
+#   - aq_markup           : "Added to Queue" notification close button
+#
+# These functions are imported by callers like:
+#   SWAGGYMUSIC/utils/stream/stream.py:
+#       from SWAGGYMUSIC.utils.inline import aq_markup, close_markup, stream_markup
+#   SWAGGYMUSIC/plugins/tools/queue.py:
+#       from SWAGGYMUSIC.utils.inline import queue_back_markup, queue_markup
+#
+# If this file is replaced with stream queue logic (put_queue / put_queue_index),
+# the import chain breaks at startup with:
+#   ImportError: cannot import name 'aq_markup' from 'SWAGGYMUSIC.utils.inline'
+
 from typing import Union
 
-from SWAGGYMUSIC.misc import db
-from SWAGGYMUSIC.utils.formatters import check_duration, seconds_to_min
-from config import autoclean, time_to_seconds
+from pyrogram.enums import ButtonStyle
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 
-async def put_queue(
-    chat_id,
-    original_chat_id,
-    file,
-    title,
-    duration,
-    user,
-    vidid,
-    user_id,
-    stream,
-    forceplay: Union[bool, str] = None,
-    mystic: Union[bool, str] = None,
+def queue_markup(
+    _,
+    DURATION,
+    CPLAY,
+    videoid,
+    played: Union[bool, int] = None,
+    dur: Union[bool, int] = None,
 ):
-    title = title.title()
-    try:
-        duration_in_seconds = time_to_seconds(duration) - 3
-    except:
-        duration_in_seconds = 0
-    put = {
-        "title": title,
-        "dur": duration,
-        "streamtype": stream,
-        "by": user,
-        "user_id": user_id,
-        "chat_id": original_chat_id,
-        "file": file,
-        "vidid": vidid,
-        "seconds": duration_in_seconds,
-        "played": 0,
-        "mystic": mystic,
-    }
-    if forceplay:
-        check = db.get(chat_id)
-        if check:
-            check.insert(0, put)
-        else:
-            db[chat_id] = []
-            db[chat_id].append(put)
-    else:
-        db[chat_id].append(put)
-    autoclean.append(file)
+    """Inline keyboard for the now-playing message footer.
 
-    # ── Silent background prefetch of the next-up song ────────────────────
-    # After the song is queued, fire-and-forget a prefetch task. The task
-    # is a no-op if this song is NOT the next-up (index 1) or if it's not
-    # a "vid_" entry that would benefit from a pre-download. All error
-    # handling is internal to schedule_prefetch — this call never raises.
-    try:
-        from SWAGGYMUSIC.utils.stream.prefetch import schedule_prefetch
-        await schedule_prefetch(
-            chat_id=chat_id,
-            queued_file=file,
-            videoid=vidid,
-            streamtype=stream,
-            video=(True if str(stream).lower() == "video" else None),
-        )
-    except Exception:
-        # Prefetch is purely an optimization — never let it break the
-        # queue-add path.
-        pass
+    Two layouts depending on whether the duration is known:
+      - DURATION == "Unknown" : [Queue] [Close]
+      - DURATION known         : [Timer/Progress] / [Queue] [Close]
 
-
-async def put_queue_index(
-    chat_id,
-    original_chat_id,
-    file,
-    title,
-    duration,
-    user,
-    vidid,
-    stream,
-    forceplay: Union[bool, str] = None,
-    mystic: Union[bool, str] = None,
-):
-    if "20.212.146.162" in vidid:
-        try:
-            dur = await asyncio.get_event_loop().run_in_executor(
-                None, check_duration, vidid
+    Callbacks fired:
+      - "GetQueued {CPLAY}|{videoid}"  → opens the queue list view
+      - "GetTimer"                     → shows the playback progress bar
+      - "close"                         → closes the now-playing message
+    """
+    not_dur = [
+        [
+            InlineKeyboardButton(
+                text=_["QU_B_1"],
+                callback_data=f"GetQueued {CPLAY}|{videoid}",
+                style=ButtonStyle.PRIMARY,
+            ),
+            InlineKeyboardButton(
+                text=_["CLOSE_BUTTON"],
+                callback_data="close",
+                style=ButtonStyle.DANGER,
+            ),
+        ]
+    ]
+    dur = [
+        [
+            InlineKeyboardButton(
+                text=_["QU_B_2"].format(played, dur),
+                callback_data="GetTimer",
+                style=ButtonStyle.SUCCESS,
             )
-            duration = seconds_to_min(dur)
-        except:
-            duration = "ᴜʀʟ sᴛʀᴇᴀᴍ"
-            dur = 0
-    else:
-        dur = 0
-    put = {
-        "title": title,
-        "dur": duration,
-        "streamtype": stream,
-        "by": user,
-        "chat_id": original_chat_id,
-        "file": file,
-        "vidid": vidid,
-        "seconds": dur,
-        "played": 0,
-        "mystic": mystic,
-    }
-    if forceplay:
-        check = db.get(chat_id)
-        if check:
-            check.insert(0, put)
-        else:
-            db[chat_id] = []
-            db[chat_id].append(put)
-    else:
-        db[chat_id].append(put)
+        ],
+        [
+            InlineKeyboardButton(
+                text=_["QU_B_1"],
+                callback_data=f"GetQueued {CPLAY}|{videoid}",
+                style=ButtonStyle.PRIMARY,
+            ),
+            InlineKeyboardButton(
+                text=_["CLOSE_BUTTON"],
+                callback_data="close",
+                style=ButtonStyle.DANGER,
+            ),
+        ],
+    ]
+    upl = InlineKeyboardMarkup(not_dur if DURATION == "Unknown" else dur)
+    return upl
 
-    # ── Silent background prefetch of the next-up song ────────────────────
-    # Same as put_queue — fire-and-forget a prefetch task. For index_
-    # streams (URL streams) the prefetch trigger is a no-op internally
-    # since they don't hit YouTube.download(); only "vid_" entries actually
-    # trigger a background download.
-    try:
-        from SWAGGYMUSIC.utils.stream.prefetch import schedule_prefetch
-        await schedule_prefetch(
-            chat_id=chat_id,
-            queued_file=file,
-            videoid=vidid,
-            streamtype=stream,
-            video=(True if str(stream).lower() == "video" else None),
-        )
-    except Exception:
-        pass
+
+def queue_back_markup(_, CPLAY):
+    """Back + Close row shown in the queue view after clicking GetTimer.
+
+    Callbacks fired:
+      - "queue_back_timer {CPLAY}"  → returns to the timer/progress view
+      - "close"                     → closes the message
+    """
+    upl = InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    text=_["BACK_BUTTON"],
+                    callback_data=f"queue_back_timer {CPLAY}",
+                    style=ButtonStyle.PRIMARY,
+                ),
+                InlineKeyboardButton(
+                    text=_["CLOSE_BUTTON"],
+                    callback_data="close",
+                    style=ButtonStyle.DANGER,
+                ),
+            ]
+        ]
+    )
+    return upl
+
+
+def aq_markup(_, chat_id):
+    """Close button for the "Added to Queue" notification.
+
+    Accepts (_, chat_id) to match the call signature used in
+    SWAGGYMUSIC/utils/stream/stream.py (the chat_id argument is accepted
+    for signature compatibility but is not currently used in the layout).
+
+    Callbacks fired:
+      - "close"  → dismisses the added-to-queue notification
+    """
+    buttons = [
+        [InlineKeyboardButton(
+            text="⌯ ᴄʟᴏsє ⌯",
+            callback_data="close",
+            style=ButtonStyle.DANGER,
+        )],
+    ]
+    return buttons
