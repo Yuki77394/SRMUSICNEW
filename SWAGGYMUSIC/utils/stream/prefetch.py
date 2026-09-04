@@ -191,13 +191,9 @@ async def schedule_prefetch(
         # Prefetch explicitly disabled via env var.
         return
 
-    if not _should_prefetch(queued_file):
-        return
-
-    if not videoid:
-        return
-
-    # Always resolve the actual NEXT-UP entry from the live queue. This keeps
+    # Always resolve the actual NEXT-UP entry from the live queue. Do not
+    # decide from the caller arguments first: the song just added may be at
+    # index 2+ while queue[1] is the actual next-up song that needs prefetch.
     # prefetch correct even when the just-added song was appended behind
     # multiple existing entries.
     try:
