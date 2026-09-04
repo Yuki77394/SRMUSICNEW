@@ -1,5 +1,4 @@
-#
-# Copyright (C) 2021-2022 by TheAloneteam@Github, < https://github.com/TheAloneTeam >.
+# Copyright (C) 2021-2026 by Yuki77394@Github, < https://github.com/Yuki77394 >.
 #
 # This file is part of < https://github.com/TheAloneTeam/SWAGGYMUSIC > project,
 # and is released under the "GNU v3.0 License Agreement".
@@ -86,11 +85,11 @@ _log = LOGGER(__name__)
 #   - Tunable via env var PREFETCH_CONCURRENCY if an operator needs more.
 #   - Falsy or invalid values disable prefetch entirely (set to 0).
 try:
-    _concurrency = int(os.environ.get("PREFETCH_CONCURRENCY", "3"))
+    _concurrency = int(os.environ.get("PREFETCH_CONCURRENCY", "1"))
 except (TypeError, ValueError):
-    _concurrency = 3
+    _concurrency = 1
 if _concurrency < 0:
-    _concurrency = 3
+    _concurrency = 1
 
 PREFETCH_CONCURRENCY: int = _concurrency
 
@@ -198,28 +197,21 @@ async def schedule_prefetch(
     if not videoid:
         return
 
-    # Only prefetch the NEXT-UP song (index 1 of the queue). The currently
-    # playing song is at index 0. If the just-added song is not yet
-    # next-up (e.g. queue already had multiple entries), skip the prefetch
-    # — when the queue advances and this song becomes next-up, the
-    # subsequent put_queue call (for the song AFTER it) will not retrigger
-    # a prefetch for it, but the change_stream flow already calls
-    # YouTube.download() which returns the cached file. So there's no
-    # correctness loss — only a missed optimization opportunity, which
-    # is acceptable to keep the trigger logic simple and safe.
+    # Always resolve the actual NEXT-UP entry from the live queue. This keeps
+    # prefetch correct even when the just-added song was appended behind
+    # multiple existing entries.
     try:
         queue_snapshot = db.get(chat_id) or []
         if len(queue_snapshot) < 2:
-            # Only one song in queue — it's currently playing, nothing to prefetch.
             return
-        # The just-added song should be at the end. We only prefetch if it
-        # ended up at index 1 (next-up).
         next_up = queue_snapshot[1]
-        if next_up.get("vidid") != videoid and next_up.get("file") != queued_file:
+        queued_file = next_up.get("file") or ""
+        videoid = next_up.get("vidid") or ""
+        streamtype = next_up.get("streamtype") or streamtype
+        video = True if str(streamtype).lower() == "video" else None
+        if not _should_prefetch(queued_file) or not videoid:
             return
     except Exception:
-        # Queue state lookup failed — silently bail. The normal playback
-        # flow will handle the download when this song comes up.
         return
 
     # Determine media type (audio vs video) for the download call.
@@ -360,6 +352,8 @@ def _on_task_done(
                 chat_tasks.pop(task_key, None)
             if not chat_tasks:
                 _tasks.pop(chat_id, None)
+        media_type = task_key[1]
+        _per_song_locks.pop((chat_id, videoid, media_type), None)
     except Exception:
         # Never let a cleanup callback raise.
         pass
