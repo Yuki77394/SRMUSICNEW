@@ -16,6 +16,7 @@ from typing import Union
 from ntgcalls import ConnectionNotFound, TelegramServerError
 from pyrogram import Client
 from pyrogram.enums import ButtonStyle
+from pyrogram.errors import MessageIdInvalid, MessageNotModified
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from pytgcalls import PyTgCalls, exceptions, types
 from pytgcalls.pytgcalls_session import PyTgCallsSession
@@ -46,6 +47,141 @@ async def delete_old_message(chat_id: int):
             await old.delete()
     except:
         pass
+
+
+# ─── Per-chat change_stream serialization lock ──────────────────────────────
+# Multiple events can fire change_stream() for the same chat_id concurrently:
+#   - The StreamEnded handler fires when a song naturally ends
+#   - The /skip command calls change_stream via Alone.change_stream
+#   - The /stop command may call stop_stream which uses _clear_
+#   - Autoplay may add a song mid-stream which retriggers change_stream
+# Without serialization, two concurrent change_stream calls for the same
+# chat_id would race on db[chat_id][0]["mystic"] — both reading the same
+# old_mystic, both trying to edit it, the second edit failing because the
+# first edit already changed/deleted the message.
+#
+# This lock ensures only ONE change_stream call per chat runs at a time.
+# Other concurrent calls for the same chat wait until the first finishes.
+# This is conservative but correct — concurrent song transitions for the
+# same chat are inherently a bug, and serializing them is the safest fix.
+_change_stream_locks: dict = {}
+_change_stream_locks_guard = asyncio.Lock()
+
+
+async def _get_change_stream_lock(chat_id: int) -> asyncio.Lock:
+    """Return (or create) the per-chat change_stream lock."""
+    lock = _change_stream_locks.get(chat_id)
+    if lock is None:
+        async with _change_stream_locks_guard:
+            # Re-check after acquiring the guard to avoid races.
+            lock = _change_stream_locks.get(chat_id)
+            if lock is None:
+                lock = asyncio.Lock()
+                _change_stream_locks[chat_id] = lock
+    return lock
+
+
+async def _invalidate_stale_mystic(chat_id: int) -> None:
+    """Clear the stored 'mystic' Message reference for this chat.
+
+    Called when a message edit fails with MessageIdInvalid — the stored
+    Message is no longer editable (deleted, too old, replaced, etc.).
+    Clearing it ensures the next change_stream call won't try to edit
+    the same invalid message again.
+    """
+    try:
+        if chat_id in db and db[chat_id]:
+            db[chat_id][0]["mystic"] = None
+    except Exception:
+        pass
+
+
+async def _safe_edit_or_send(
+    chat_id: int,
+    original_chat_id: int,
+    old_mystic,
+    text: str,
+):
+    """Edit old_mystic in place, OR fall back to sending a fresh message.
+
+    Used by the error paths in change_stream when the playback fails and
+    we need to show the user the call_6 error message ("failed to switch
+    stream, use /skip to change the track again").
+
+    Behavior:
+      - If old_mystic is None: send a fresh message via app.send_message.
+      - If old_mystic is set: try old_mystic.edit_text(text).
+        - On MessageIdInvalid: clear the stale mystic reference, then
+          send a FRESH message via app.send_message. We do NOT retry
+          edit_caption on the same invalid message (that was the bug).
+        - On MessageNotModified: the message already shows this text,
+          so just return it as-is.
+        - On other errors (ChatWriteForbidden, etc.): log the error type
+          and message, but don't crash. Try send_message as a fallback.
+      - The fresh message (if sent) is returned so the caller can use it.
+    """
+    if old_mystic is None:
+        try:
+            return await app.send_message(
+                original_chat_id,
+                text=text,
+                disable_web_page_preview=True,
+            )
+        except Exception as e:
+            LOGGER(__name__).error(
+                f"change_stream: send_message fallback failed for "
+                f"chat {original_chat_id}: {type(e).__name__}: {e}"
+            )
+            return None
+
+    # Try editing the existing message
+    try:
+        return await old_mystic.edit_text(text, disable_web_page_preview=True)
+    except MessageIdInvalid:
+        # The stored mystic is stale (deleted/too old/replaced/etc.).
+        # Clear it so the next change_stream call doesn't retry on it.
+        await _invalidate_stale_mystic(chat_id)
+        LOGGER(__name__).warning(
+            f"change_stream: old_mystic for chat {chat_id} was stale "
+            f"(MessageIdInvalid); sending fresh message instead"
+        )
+        # Fall back to a fresh message — do NOT retry edit_caption on
+        # the same invalid message.
+        try:
+            return await app.send_message(
+                original_chat_id,
+                text=text,
+                disable_web_page_preview=True,
+            )
+        except Exception as e:
+            LOGGER(__name__).error(
+                f"change_stream: send_message fallback failed for "
+                f"chat {original_chat_id}: {type(e).__name__}: {e}"
+            )
+            return None
+    except MessageNotModified:
+        # The message already shows this exact text — nothing to do.
+        return old_mystic
+    except Exception as e:
+        # Some other edit error (ChatWriteForbidden, MessageEmpty, etc.).
+        # Log the actual exception type+message so future debugging is
+        # easier, then try a fresh send_message as a fallback.
+        LOGGER(__name__).warning(
+            f"change_stream: old_mystic.edit_text failed for chat "
+            f"{chat_id}: {type(e).__name__}: {e}"
+        )
+        try:
+            return await app.send_message(
+                original_chat_id,
+                text=text,
+                disable_web_page_preview=True,
+            )
+        except Exception as e2:
+            LOGGER(__name__).error(
+                f"change_stream: send_message fallback failed for "
+                f"chat {original_chat_id}: {type(e2).__name__}: {e2}"
+            )
+            return None
 
 
 autoend = {}
@@ -472,6 +608,19 @@ class Call(PyTgCalls):
 
     @capture_internal_err
     async def change_stream(self, client: PyTgCalls, chat_id: int):
+        # Serialize change_stream calls per-chat. Without this, two concurrent
+        # change_stream invocations for the same chat (e.g. StreamEnded +
+        # /skip fired close together, or autoplay mid-stream) would race on
+        # db[chat_id][0]["mystic"] — both reading the same old_mystic, both
+        # trying to edit it, the second edit failing with MessageIdInvalid
+        # because the first edit already changed/deleted the message.
+        # Holding this lock ensures the second call sees the updated mystic
+        # reference (or None) after the first call completes.
+        change_stream_lock = await _get_change_stream_lock(chat_id)
+        async with change_stream_lock:
+            return await self._change_stream_impl(client, chat_id)
+
+    async def _change_stream_impl(self, client: PyTgCalls, chat_id: int):
         from SWAGGYMUSIC.utils.stream.stream import update_stream_ui
         check = db.get(chat_id)
         old_mystic = None
@@ -665,33 +814,35 @@ class Call(PyTgCalls):
                     videoid=True,
                     video=video,
                 )
-            except Exception:
-                if old_mystic:
-                    try:
-                        return await old_mystic.edit_text(
-                            _["call_6"], disable_web_page_preview=True
-                        )
-                    except:
-                        return await old_mystic.edit_caption(
-                            caption=_["call_6"]
-                        )
-                else:
-                    return await app.send_message(original_chat_id, _["call_6"])
+            except Exception as e:
+                # YouTube.download() raised an exception (network error,
+                # yt-dlp crash, etc.). Show the user the call_6 error
+                # message ("failed to switch stream, use /skip to change
+                # the track again").
+                #
+                # Use _safe_edit_or_send instead of bare edit_text/edit_caption
+                # so that if old_mystic is stale (MessageIdInvalid), we don't
+                # retry edit_caption on the same invalid message — we send a
+                # fresh message instead.
+                LOGGER(__name__).warning(
+                    f"change_stream: YouTube.download raised for "
+                    f"chat {chat_id} video={videoid}: {type(e).__name__}: {e}"
+                )
+                return await _safe_edit_or_send(
+                    chat_id, original_chat_id, old_mystic, _["call_6"]
+                )
             if not file_path:
                 # YouTube.download() returned (None, False) — the download
                 # failed silently (age-restriction, region-block, expired
                 # stream, etc.). Don't pass None to _build_stream.
-                if old_mystic:
-                    try:
-                        return await old_mystic.edit_text(
-                            _["call_6"], disable_web_page_preview=True
-                        )
-                    except:
-                        return await old_mystic.edit_caption(
-                            caption=_["call_6"]
-                        )
-                else:
-                    return await app.send_message(original_chat_id, _["call_6"])
+                # Same _safe_edit_or_send recovery as above.
+                LOGGER(__name__).warning(
+                    f"change_stream: YouTube.download returned None for "
+                    f"chat {chat_id} video={videoid} (silent failure)"
+                )
+                return await _safe_edit_or_send(
+                    chat_id, original_chat_id, old_mystic, _["call_6"]
+                )
             stream = self._build_stream(file_path, video=video)
             try:
                 await self._play_on_assistant(client, chat_id, stream)
