@@ -70,88 +70,43 @@ async def _safe_edit_or_send(
     old_mystic,
     text: str,
 ):
-    """Edit old_mystic in place, OR fall back to sending a fresh message.
+    """Edit old_mystic in place, or send a fresh message if it's stale.
 
-    Used by change_stream's error paths when playback fails and we need
-    to show the user the call_6 error message ("failed to switch stream,
-    use /skip to change the track again").
+    Replaces the old buggy pattern in change_stream's download-failure
+    error paths:
 
-    Behavior:
-      - If old_mystic is None: send a fresh message via app.send_message.
-      - If old_mystic is set: try old_mystic.edit_text(text).
-        - On MessageIdInvalid: clear the stale mystic reference, then
-          send a FRESH message via app.send_message. We do NOT retry
-          edit_caption on the same invalid message (that was the bug
-          — retrying edit_caption on the same invalid message always
-          fails identically).
-        - On MessageNotModified: the message already shows this text,
-          so just return it as-is (no duplicate send).
-        - On other errors (ChatWriteForbidden, etc.): log the error
-          type and message, then try send_message as a fallback.
-      - Never raises. Returns the Message on success or None on total failure.
+        try:
+            return await old_mystic.edit_text(...)
+        except:                                      # caught ALL exceptions
+            return await old_mystic.edit_caption(...)  # retried on SAME invalid msg
+
+    The bug: when edit_text raised MessageIdInvalid, edit_caption was
+    retried on the same invalid message — which also raised
+    MessageIdInvalid, propagating uncaught and crashing the handler.
+
+    Fix: catch MessageIdInvalid specifically, invalidate the stale
+    mystic reference, and send a fresh message. For MessageNotModified
+    (message already shows this text), return as-is without duplicating.
+    All other exceptions propagate to the caller (preserving the old
+    behavior where capture_internal_err would catch them).
     """
     if old_mystic is None:
-        try:
-            return await app.send_message(
-                original_chat_id,
-                text=text,
-                disable_web_page_preview=True,
-            )
-        except Exception as e:
-            LOGGER(__name__).error(
-                f"change_stream: send_message fallback failed for "
-                f"chat {original_chat_id}: {type(e).__name__}: {e}"
-            )
-            return None
-
-    # Try editing the existing message in place
+        return await app.send_message(
+            original_chat_id, text=text, disable_web_page_preview=True
+        )
     try:
         return await old_mystic.edit_text(text, disable_web_page_preview=True)
     except MessageIdInvalid:
-        # The stored mystic is stale (deleted/too old/replaced/etc.).
-        # Clear it so the next change_stream call doesn't retry on it.
         await _invalidate_stale_mystic(chat_id)
         LOGGER(__name__).warning(
             f"change_stream: old_mystic for chat {chat_id} was stale "
             f"(MessageIdInvalid); sending fresh message instead"
         )
-        # Fall back to a fresh message — do NOT retry edit_caption on
-        # the same invalid message (that was the original bug).
-        try:
-            return await app.send_message(
-                original_chat_id,
-                text=text,
-                disable_web_page_preview=True,
-            )
-        except Exception as e:
-            LOGGER(__name__).error(
-                f"change_stream: send_message fallback failed for "
-                f"chat {original_chat_id}: {type(e).__name__}: {e}"
-            )
-            return None
-    except MessageNotModified:
-        # The message already shows this exact text — nothing to do.
-        return old_mystic
-    except Exception as e:
-        # Some other edit error (ChatWriteForbidden, MessageEmpty, etc.).
-        # Log the actual exception type+message so future debugging is
-        # easier, then try a fresh send_message as a fallback.
-        LOGGER(__name__).warning(
-            f"change_stream: old_mystic.edit_text failed for chat "
-            f"{chat_id}: {type(e).__name__}: {e}"
+        return await app.send_message(
+            original_chat_id, text=text, disable_web_page_preview=True
         )
-        try:
-            return await app.send_message(
-                original_chat_id,
-                text=text,
-                disable_web_page_preview=True,
-            )
-        except Exception as e2:
-            LOGGER(__name__).error(
-                f"change_stream: send_message fallback failed for "
-                f"chat {original_chat_id}: {type(e2).__name__}: {e2}"
-            )
-            return None
+    except MessageNotModified:
+        return old_mystic
 
 
 autoend = {}
