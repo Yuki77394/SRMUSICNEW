@@ -57,6 +57,25 @@ async def put_queue(
         db[chat_id].append(put)
     autoclean.append(file)
 
+    # ── Silent background prefetch of the next-up song ────────────────────
+    # After the song is queued, fire-and-forget a prefetch task. The task
+    # is a no-op if this song is NOT the next-up (index 1) or if it's not
+    # a "vid_" entry that would benefit from a pre-download. All error
+    # handling is internal to schedule_prefetch — this call never raises.
+    try:
+        from SWAGGYMUSIC.utils.stream.prefetch import schedule_prefetch
+        await schedule_prefetch(
+            chat_id=chat_id,
+            queued_file=file,
+            videoid=vidid,
+            streamtype=stream,
+            video=(True if str(stream).lower() == "video" else None),
+        )
+    except Exception:
+        # Prefetch is purely an optimization — never let it break the
+        # queue-add path.
+        pass
+
 
 async def put_queue_index(
     chat_id,
@@ -102,3 +121,20 @@ async def put_queue_index(
             db[chat_id].append(put)
     else:
         db[chat_id].append(put)
+
+    # ── Silent background prefetch of the next-up song ────────────────────
+    # Same as put_queue — fire-and-forget a prefetch task. For index_
+    # streams (URL streams) the prefetch trigger is a no-op internally
+    # since they don't hit YouTube.download(); only "vid_" entries actually
+    # trigger a background download.
+    try:
+        from SWAGGYMUSIC.utils.stream.prefetch import schedule_prefetch
+        await schedule_prefetch(
+            chat_id=chat_id,
+            queued_file=file,
+            videoid=vidid,
+            streamtype=stream,
+            video=(True if str(stream).lower() == "video" else None),
+        )
+    except Exception:
+        pass

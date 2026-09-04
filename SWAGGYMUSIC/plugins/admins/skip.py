@@ -51,6 +51,13 @@ async def skip(cli, message: Message, _, chat_id):
                                 return await message.reply_text(_["admin_12"])
                             if popped:
                                 await auto_clean(popped)
+                                # Cancel any in-flight background prefetch task
+                                # for the song we just popped — it's now stale.
+                                try:
+                                    from SWAGGYMUSIC.utils.stream.prefetch import cancel_prefetch_for_song
+                                    cancel_prefetch_for_song(chat_id, popped.get("vidid", ""))
+                                except Exception:
+                                    pass
                             if not check:
                                 if await is_autoplay_on(chat_id):
                                     try:
@@ -107,6 +114,13 @@ async def skip(cli, message: Message, _, chat_id):
             popped = check.pop(0)
             if popped:
                 await auto_clean(popped)
+                # Cancel any in-flight background prefetch task for the
+                # song we just popped — it's now stale.
+                try:
+                    from SWAGGYMUSIC.utils.stream.prefetch import cancel_prefetch_for_song
+                    cancel_prefetch_for_song(chat_id, popped.get("vidid", ""))
+                except Exception:
+                    pass
             if not check:
                 if await is_autoplay_on(chat_id):
                     try:
@@ -302,3 +316,21 @@ async def skip(cli, message: Message, _, chat_id):
             run = await update_stream_ui(chat_id, message.chat.id, None, img, caption, button)
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "stream"
+
+    # ── After skip: prefetch the new next-up song ─────────────────────────
+    # Same as change_stream's hook — fire-and-forget a prefetch for the
+    # song now at index 1. Safe no-op if not a vid_ entry or already cached.
+    try:
+        from SWAGGYMUSIC.utils.stream.prefetch import schedule_prefetch
+        new_queue = db.get(chat_id) or []
+        if len(new_queue) >= 2:
+            next_up = new_queue[1]
+            await schedule_prefetch(
+                chat_id=chat_id,
+                queued_file=next_up.get("file", ""),
+                videoid=next_up.get("vidid", ""),
+                streamtype=next_up.get("streamtype", ""),
+                video=(True if str(next_up.get("streamtype", "")).lower() == "video" else None),
+            )
+    except Exception:
+        pass

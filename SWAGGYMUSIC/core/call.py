@@ -71,6 +71,14 @@ async def _clear_(chat_id: int):
     except Exception:
         pass
 
+    # Cancel any in-flight background prefetch tasks for this chat so they
+    # don't keep downloading a song that's no longer needed.
+    try:
+        from SWAGGYMUSIC.utils.stream.prefetch import cancel_prefetch_for_chat
+        cancel_prefetch_for_chat(chat_id)
+    except Exception:
+        pass
+
 
 class Call(PyTgCalls):
     def __init__(self):
@@ -224,6 +232,13 @@ class Call(PyTgCalls):
                 pass
         try:
             await _clear_(chat_id)
+        except Exception:
+            pass
+        # Belt-and-suspenders: cancel all prefetch tasks for this chat
+        # even if _clear_ failed for some reason.
+        try:
+            from SWAGGYMUSIC.utils.stream.prefetch import cancel_prefetch_for_chat
+            cancel_prefetch_for_chat(chat_id)
         except Exception:
             pass
 
@@ -769,6 +784,28 @@ class Call(PyTgCalls):
                     db[chat_id][0]["mystic"] = run
                     db[chat_id][0]["markup"] = "stream"
                     db[chat_id][0]["file"] = queued
+
+        # ── After queue advance: prefetch the new next-up song ─────────────
+        # The song that just became the new current (index 0) was likely
+        # already prefetched when it was at index 1. Now that it's playing,
+        # the song at index 1 (the new next-up) may not have been prefetched
+        # if there were 3+ songs in queue when it was added. Fire-and-forget
+        # a prefetch for the new next-up song. Safe no-op if not a vid_ entry
+        # or if already cached.
+        try:
+            from SWAGGYMUSIC.utils.stream.prefetch import schedule_prefetch
+            new_queue = db.get(chat_id) or []
+            if len(new_queue) >= 2:
+                next_up = new_queue[1]
+                await schedule_prefetch(
+                    chat_id=chat_id,
+                    queued_file=next_up.get("file", ""),
+                    videoid=next_up.get("vidid", ""),
+                    streamtype=next_up.get("streamtype", ""),
+                    video=(True if str(next_up.get("streamtype", "")).lower() == "video" else None),
+                )
+        except Exception:
+            pass
 
     @capture_internal_err
     async def ping(self):
