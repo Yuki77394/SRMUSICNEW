@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import os
 import random
 import re
@@ -24,6 +25,8 @@ API_KEY = os.environ.get(
 ).strip()
 
 DOWNLOAD_DIR = "downloads"
+
+LOGGER = logging.getLogger(__name__)
 
 os.makedirs(
     DOWNLOAD_DIR,
@@ -235,7 +238,13 @@ async def _ytdlp_fallback(link: str, media_type: str) -> Union[str, None]:
 
     try:
         await asyncio.get_event_loop().run_in_executor(None, _do_download)
-    except Exception:
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        LOGGER.exception(
+            "yt-dlp fallback failed: video=%s type=%s error=%r",
+            video_id, media_type, exc,
+        )
         return None
 
     if os.path.isfile(file_path) and os.path.getsize(file_path) > 1024:
@@ -247,6 +256,10 @@ async def _ytdlp_fallback(link: str, media_type: str) -> Union[str, None]:
             os.remove(file_path)
         except Exception:
             pass
+        LOGGER.warning(
+            "yt-dlp produced an invalid media file: video=%s type=%s path=%s",
+            video_id, media_type, file_path,
+        )
 
     return None
 
@@ -394,6 +407,10 @@ async def _api_download(
             ) as response:
 
                 if response.status != 200:
+                    LOGGER.warning(
+                        "YouTube API download HTTP failure: video=%s type=%s status=%s",
+                        video_id, media_type, response.status,
+                    )
                     return None
 
                 content_type = (
@@ -410,6 +427,10 @@ async def _api_download(
                     or "application/json"
                     in content_type
                 ):
+                    LOGGER.warning(
+                        "YouTube API returned non-media content: video=%s type=%s content_type=%s",
+                        video_id, media_type, content_type,
+                    )
                     return None
 
                 size = 0
@@ -463,6 +484,10 @@ async def _api_download(
                 )
 
                 if media_type == "audio" and not await _has_audio_stream(file_path):
+                    LOGGER.warning(
+                        "YouTube API produced file without audio stream: video=%s path=%s",
+                        video_id, file_path,
+                    )
                     try:
                         os.remove(file_path)
                     except Exception:
@@ -470,6 +495,10 @@ async def _api_download(
                     return None
 
                 if media_type == "video" and not await _has_video_stream(file_path):
+                    LOGGER.warning(
+                        "YouTube API produced file without video stream: video=%s path=%s",
+                        video_id, file_path,
+                    )
                     try:
                         os.remove(file_path)
                     except Exception:
@@ -478,7 +507,13 @@ async def _api_download(
 
                 return file_path
 
-    except Exception:
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        LOGGER.exception(
+            "YouTube API downloader exception: video=%s type=%s error=%r",
+            video_id, media_type, exc,
+        )
 
         if os.path.exists(
             temp_path
