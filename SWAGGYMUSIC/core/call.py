@@ -542,3 +542,406 @@ class Call(PyTgCalls):
         popped = None
         loop = await get_loop(chat_id)
         try:
+            if loop == 0:
+                if check:
+                    popped = check.pop(0)
+            else:
+                loop = loop - 1
+                await set_loop(chat_id, loop)
+
+            if popped:
+                await auto_clean(popped)
+
+            if not check:
+                if await is_autoplay_on(chat_id):
+                    try:
+                        vidid = popped["vidid"]
+                        related = await YouTube.get_related_videos(vidid)
+                        if not related:
+                            return await _clear_(chat_id)
+                        video_id = random.choice(related)
+                        try:
+                            details, track_id = await YouTube.track(video_id, True)
+                            if not details.get("title"):
+                                raise Exception("no details")
+                        except:
+                            raise Exception("fetch fail")
+
+                        from SWAGGYMUSIC.utils.stream.queue import put_queue
+                        await put_queue(
+                            chat_id,
+                            popped["chat_id"],
+                            f"vid_{video_id}",
+                            details["title"],
+                            details["duration_min"],
+                            popped["by"],
+                            video_id,
+                            popped["user_id"],
+                            popped["streamtype"],
+                            forceplay=True,
+                        )
+                        # Re-fetch check because put_queue added a song
+                        check = db.get(chat_id)
+                    except:
+                        pass
+
+                if not check:
+                    await _clear_(chat_id)
+                    if not await is_autoplay_on(chat_id):
+                        try:
+                            buttons = InlineKeyboardMarkup(
+                                [
+                                    [
+                                        InlineKeyboardButton(
+                                            "✙ ʌᴅᴅ ϻє вᴧʙʏ ✙",
+                                            url=f"https://t.me/{app.username}?startgroup=true",
+                                            style=ButtonStyle.PRIMARY,
+                                        ),
+                                    ],
+                                    [
+                                        InlineKeyboardButton(
+                                            "⋞ ᴄʟᴏsє ⋟",
+                                            callback_data="close_message",
+                                            style=ButtonStyle.DANGER,
+                                        ),
+                                    ]
+                                ]
+                            )
+                            await app.send_message(
+                                chat_id,
+                                "🎵 𝐓ʜᴇ 𝐐ᴜᴇᴜᴇ 𝐇ᴀs 𝐅ɪɴɪsʜᴇᴅ. 𝐔sᴇ /play 𝐓ᴏ 𝐀ᴅᴅ 𝐌ᴏʀᴇ 𝐒ᴏɴɢs!!",
+                                reply_markup=buttons,
+                            )
+                        except:
+                            pass
+                    return await client.leave_call(chat_id, close=False)
+        except Exception:
+            try:
+                await _clear_(chat_id)
+                try:
+                    buttons = InlineKeyboardMarkup(
+                        [
+                            [
+                                InlineKeyboardButton(
+                                    "✙ ʌᴅᴅ ϻє вᴧʙʏ ✙",
+                                    url=f"https://t.me/{app.username}?startgroup=true",
+                                    style=ButtonStyle.PRIMARY,
+                                ),
+                            ],
+                            [
+                                InlineKeyboardButton(
+                                    "⋞ ᴄʟᴏsє ⋟",
+                                    callback_data="close_message",
+                                    style=ButtonStyle.DANGER,
+                                ),
+                            ]
+                        ]
+                    )
+                    await app.send_message(
+                        chat_id,
+                        "🎵 𝐓ʜᴇ 𝐐ᴜᴇᴜᴇ 𝐇ᴀs 𝐅ɪɴɪsʜᴇᴅ. 𝐔sᴇ /play 𝐓ᴏ 𝐀ᴅᴅ 𝐌ᴏʀᴇ 𝐒ᴏɴɢs!!",
+                        reply_markup=buttons,
+                    )
+                except:
+                    pass
+                return await client.leave_call(chat_id, close=False)
+            except Exception:
+                return
+
+        if not check:
+            return await client.leave_call(chat_id, close=False)
+
+        queued = check[0]["file"]
+
+        # Delete the "Added to Queue" message of the next track
+        try:
+            old_queued_mystic = check[0].get("mystic")
+            if old_queued_mystic:
+                await old_queued_mystic.delete()
+        except:
+            pass
+
+        language = await get_lang(chat_id)
+        _ = get_string(language)
+
+        if not check: # Final check
+            return await client.leave_call(chat_id, close=False)
+
+        title = (check[0]["title"]).title()
+        user = check[0]["by"]
+        original_chat_id = check[0]["chat_id"]
+        streamtype = check[0]["streamtype"]
+        videoid = check[0]["vidid"]
+
+        if chat_id in db and db[chat_id]:
+            db[chat_id][0]["played"] = 0
+
+        exis = (check[0]).get("old_dur")
+        if exis:
+            if chat_id in db and db[chat_id]:
+                db[chat_id][0]["dur"] = exis
+                db[chat_id][0]["seconds"] = check[0]["old_second"]
+                db[chat_id][0]["speed_path"] = None
+                db[chat_id][0]["speed"] = 1.0
+
+        video = True if str(streamtype) == "video" else False
+        if "live_" in queued:
+            n, link = await YouTube.video(videoid, True)
+            if n == 0 or not link:
+                # Either the resolver returned 0 results, or it returned a
+                # result but with no playable URL (link is None/empty).
+                # Treat both as a failed switch and notify the user.
+                return await app.send_message(
+                    original_chat_id,
+                    text=_["call_6"],
+                )
+            stream = self._build_stream(link, video=video)
+            try:
+                await self._play_on_assistant(client, chat_id, stream)
+            except Exception:
+                return await app.send_message(
+                    original_chat_id,
+                    text=_["call_6"],
+                )
+            img = await get_thumb(videoid)
+            button = stream_markup(
+                _, chat_id, await is_autoplay_on(chat_id), await is_thumb_on(chat_id), await get_filter(chat_id)
+            )
+            caption=_["stream_1"].format(
+                f"https://t.me/{app.username}?start=info_{videoid}",
+                title[:23],
+                check[0]["dur"],
+                user,
+            )
+            run = await update_stream_ui(chat_id, original_chat_id, None, img, caption, button)
+            if chat_id in db and db[chat_id]:
+                db[chat_id][0]["mystic"] = run
+                db[chat_id][0]["markup"] = "tg"
+                db[chat_id][0]["file"] = link
+        elif "vid_" in queued:
+            try:
+                file_path, direct = await YouTube.download(
+                    videoid,
+                    None,
+                    videoid=True,
+                    video=video,
+                )
+            except Exception as download_error:
+                # The previous "Now Playing" message may already have been
+                # deleted by auto_clean(). Never try to edit old_mystic here.
+                # It is a stale Message object at this point.
+                try:
+                    LOGGER(__name__).error(
+                        "YouTube download raised an exception for chat=%s video=%s: %s",
+                        chat_id,
+                        videoid,
+                        download_error,
+                    )
+                except Exception:
+                    pass
+
+                # Remove the failed queue item and continue with the next
+                # track instead of leaving the voice chat stuck.
+                try:
+                    failed = check.pop(0)
+                    await auto_clean(failed)
+                except Exception:
+                    pass
+
+                # Re-run the normal queue transition. If another playable
+                # track exists it will be selected; if the queue is empty,
+                # the normal autoplay/queue-finished logic handles it.
+                return await self.change_stream(client, chat_id)
+
+            if not file_path:
+                # YouTube.download() returned (None, False). The old mystic
+                # message was already cleaned above, so editing it causes
+                # MESSAGE_ID_INVALID. Log the failed track, remove it, and
+                # continue with the next queued item.
+                try:
+                    LOGGER(__name__).error(
+                        "YouTube download failed without exception for chat=%s video=%s",
+                        chat_id,
+                        videoid,
+                    )
+                except Exception:
+                    pass
+
+                try:
+                    failed = check.pop(0)
+                    await auto_clean(failed)
+                except Exception:
+                    pass
+
+                return await self.change_stream(client, chat_id)
+            stream = self._build_stream(file_path, video=video)
+            try:
+                await self._play_on_assistant(client, chat_id, stream)
+            except Exception:
+                return await app.send_message(
+                    original_chat_id,
+                    text=_["call_6"],
+                )
+            img = await get_thumb(videoid)
+            button = stream_markup(
+                _, chat_id, await is_autoplay_on(chat_id), await is_thumb_on(chat_id), await get_filter(chat_id)
+            )
+            caption=_["stream_1"].format(
+                f"https://t.me/{app.username}?start=info_{videoid}",
+                title[:23],
+                check[0]["dur"],
+                user,
+            )
+            run = await update_stream_ui(chat_id, original_chat_id, None, img, caption, button)
+            if chat_id in db and db[chat_id]:
+                db[chat_id][0]["mystic"] = run
+                db[chat_id][0]["markup"] = "stream"
+                db[chat_id][0]["file"] = file_path
+
+        elif "index_" in queued:
+            stream = self._build_stream(videoid, video=video)
+            try:
+                await self._play_on_assistant(client, chat_id, stream)
+            except Exception:
+                return await app.send_message(
+                    original_chat_id,
+                    text=_["call_6"],
+                )
+            button = stream_markup(
+                _, chat_id, await is_autoplay_on(chat_id), await is_thumb_on(chat_id), await get_filter(chat_id)
+            )
+            caption=_["stream_2"].format(user)
+            run = await update_stream_ui(chat_id, original_chat_id, None, config.STREAM_IMG_URL, caption, button)
+            if chat_id in db and db[chat_id]:
+                db[chat_id][0]["mystic"] = run
+                db[chat_id][0]["markup"] = "tg"
+                db[chat_id][0]["file"] = videoid
+        else:
+            stream = self._build_stream(queued, video=video)
+            try:
+                await self._play_on_assistant(client, chat_id, stream)
+            except Exception:
+                return await app.send_message(
+                    original_chat_id,
+                    text=_["call_6"],
+                )
+            if videoid == "telegram":
+                button = stream_markup(
+                    _, chat_id, await is_autoplay_on(chat_id), await is_thumb_on(chat_id), await get_filter(chat_id)
+                )
+                img = config.TELEGRAM_VIDEO_URL if video else config.TELEGRAM_AUDIO_URL
+                caption=_["stream_1"].format(
+                    config.SUPPORT_CHAT, title[:23], check[0]["dur"], user
+                )
+                run = await update_stream_ui(chat_id, original_chat_id, None, img, caption, button)
+                if chat_id in db and db[chat_id]:
+                    db[chat_id][0]["mystic"] = run
+                    db[chat_id][0]["markup"] = "tg"
+                    db[chat_id][0]["file"] = img
+            elif videoid == "soundcloud":
+                button = stream_markup(
+                    _, chat_id, await is_autoplay_on(chat_id), await is_thumb_on(chat_id), await get_filter(chat_id)
+                )
+                caption=_["stream_1"].format(
+                    config.SUPPORT_CHAT, title[:23], check[0]["dur"], user
+                )
+                run = await update_stream_ui(chat_id, original_chat_id, None, config.SOUNCLOUD_IMG_URL, caption, button)
+                if chat_id in db and db[chat_id]:
+                    db[chat_id][0]["mystic"] = run
+                    db[chat_id][0]["markup"] = "tg"
+                    db[chat_id][0]["file"] = queued
+            else:
+                img = await get_thumb(videoid)
+                button = stream_markup(
+                    _, chat_id, await is_autoplay_on(chat_id), await is_thumb_on(chat_id), await get_filter(chat_id)
+                )
+                caption=_["stream_1"].format(
+                    f"https://t.me/{app.username}?start=info_{videoid}",
+                    title[:23],
+                    check[0]["dur"],
+                    user,
+                )
+                run = await update_stream_ui(chat_id, original_chat_id, None, img, caption, button)
+                if chat_id in db and db[chat_id]:
+                    db[chat_id][0]["mystic"] = run
+                    db[chat_id][0]["markup"] = "stream"
+                    db[chat_id][0]["file"] = queued
+
+        # ── After queue advance: prefetch the new next-up song ─────────────
+        # The song that just became the new current (index 0) was likely
+        # already prefetched when it was at index 1. Now that it's playing,
+        # the song at index 1 (the new next-up) may not have been prefetched
+        # if there were 3+ songs in queue when it was added. Fire-and-forget
+        # a prefetch for the new next-up song. Safe no-op if not a vid_ entry
+        # or if already cached.
+        try:
+            from SWAGGYMUSIC.utils.stream.prefetch import schedule_prefetch
+            new_queue = db.get(chat_id) or []
+            if len(new_queue) >= 2:
+                next_up = new_queue[1]
+                await schedule_prefetch(
+                    chat_id=chat_id,
+                    queued_file=next_up.get("file", ""),
+                    videoid=next_up.get("vidid", ""),
+                    streamtype=next_up.get("streamtype", ""),
+                    video=(True if str(next_up.get("streamtype", "")).lower() == "video" else None),
+                )
+        except Exception:
+            pass
+
+    @capture_internal_err
+    async def ping(self):
+        pings = []
+        if config.STRING1:
+            pings.append(self.one.ping)
+        if config.STRING2:
+            pings.append(self.two.ping)
+        if config.STRING3:
+            pings.append(self.three.ping)
+        if config.STRING4:
+            pings.append(self.four.ping)
+        if config.STRING5:
+            pings.append(self.five.ping)
+        return str(round(sum(pings) / len(pings), 3)) if pings else "0"
+
+    @capture_internal_err
+    async def start(self):
+        LOGGER(__name__).info("Starting PyTgCalls Client...\n")
+        if config.STRING1:
+            await self.one.start()
+        if config.STRING2:
+            await self.two.start()
+        if config.STRING3:
+            await self.three.start()
+        if config.STRING4:
+            await self.four.start()
+        if config.STRING5:
+            await self.five.start()
+
+    @capture_internal_err
+    async def decorators(self):
+        for string, client in [
+            (config.STRING1, self.one),
+            (config.STRING2, self.two),
+            (config.STRING3, self.three),
+            (config.STRING4, self.four),
+            (config.STRING5, self.five),
+        ]:
+            if not string:
+                continue
+
+            @client.on_update()
+            async def _update_handler(_, update: types.Update, _client=client):
+                if isinstance(update, types.StreamEnded):
+                    if update.stream_type == types.StreamEnded.Type.AUDIO:
+                        await self.change_stream(_client, update.chat_id)
+                elif isinstance(update, types.ChatUpdate):
+                    if update.status in [
+                        types.ChatUpdate.Status.KICKED,
+                        types.ChatUpdate.Status.LEFT_GROUP,
+                        types.ChatUpdate.Status.CLOSED_VOICE_CHAT,
+                    ]:
+                        await self.stop_stream(update.chat_id)
+
+
+Alone = Call()
