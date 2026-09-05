@@ -15,7 +15,12 @@ from config import autoclean
 async def auto_clean(popped):
     try:
         rem = popped["file"]
-        autoclean.remove(rem)
+        try:
+            autoclean.remove(rem)
+        except ValueError:
+            # The file may already have been removed from the tracking list
+            # by another cleanup path. Deletion below remains best-effort.
+            pass
         count = autoclean.count(rem)
         if count == 0:
             if "vid_" not in rem and "live_" not in rem and "index_" not in rem:
